@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 import { 
   Users, Clock, DollarSign, Download, Trash2, 
-  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, Clock3, RefreshCw, UserPlus, Edit3
+  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, Clock3, RefreshCw, UserPlus 
 } from 'lucide-react';
 
 interface Employee {
@@ -308,12 +308,25 @@ export default function SalarySystem() {
     e.target.value = '';
   };
 
-  const deleteEmployee = async (machineId: string) => {
+  const deleteEmployee = async (machineId: string, dbId?: number) => {
     if (!confirm('Are you sure you want to delete this employee?')) return;
     setLoading(true);
-    const { error } = await supabase.from('employees').delete().eq('machine_id', machineId);
-    if (error) alert('Error: ' + error.message);
-    else fetchData();
+
+    let query = supabase.from('employees').delete();
+    if (dbId) {
+      query = query.eq('id', dbId);
+    } else {
+      query = query.eq('machine_id', machineId);
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      alert('Error deleting: ' + error.message);
+    } else {
+      alert('Employee Deleted Successfully!');
+      fetchData();
+    }
     setLoading(false);
   };
 
@@ -632,7 +645,7 @@ export default function SalarySystem() {
                         </span>
                       </td>
                       <td className="p-4 text-center space-x-2">
-                        <button onClick={() => deleteEmployee(emp.machine_id)} className="text-slate-500 hover:text-rose-400 transition-colors p-1"><Trash2 size={15} /></button>
+                        <button onClick={() => deleteEmployee(emp.machine_id, emp.id)} className="text-slate-500 hover:text-rose-400 transition-colors p-1"><Trash2 size={15} /></button>
                       </td>
                     </tr>
                   ))}
