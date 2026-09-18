@@ -19,6 +19,7 @@ interface Employee {
   salary_type: 'Monthly' | 'Weekly';
   salary: string;
   status: 'Active' | 'Resigned';
+  late_tolerance_minutes?: number | null;
 }
 
 interface DailyPunch {
@@ -58,6 +59,7 @@ export default function SalarySystem() {
   const [formSalaryType, setFormSalaryType] = useState<'Monthly' | 'Weekly'>('Monthly');
   const [formSalary, setFormSalary] = useState<string>('');
   const [formStatus, setFormStatus] = useState<'Active' | 'Resigned'>('Active');
+  const [formLateTolerance, setFormLateTolerance] = useState<string>('');
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
 
   const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
@@ -132,6 +134,7 @@ export default function SalarySystem() {
     setFormSalaryType('Monthly');
     setFormSalary('');
     setFormStatus('Active');
+    setFormLateTolerance('');
   };
 
   const handleEditEmployee = (emp: Employee) => {
@@ -144,6 +147,7 @@ export default function SalarySystem() {
     setFormSalaryType(emp.salary_type || 'Monthly');
     setFormSalary(emp.salary || '');
     setFormStatus(emp.status || 'Active');
+    setFormLateTolerance(emp.late_tolerance_minutes == null ? '' : String(emp.late_tolerance_minutes));
     setActiveTab('employees');
   };
 
@@ -178,7 +182,8 @@ export default function SalarySystem() {
       mobile: formMobile.trim(),
       salary_type: formSalaryType,
       salary: formSalary,
-      status: formStatus
+      status: formStatus,
+      late_tolerance_minutes: formLateTolerance === '' ? null : Math.max(0, Number(formLateTolerance))
     };
 
     try {
@@ -225,20 +230,25 @@ export default function SalarySystem() {
     return `${h.toString().padStart(2, '0')}:${m} ${ampm}`;
   };
 
-  const calculateLateMinutes = (inTime24: string) => {
+  const getEmployeeTolerance = (machineId: string) => {
+    const employee = employees.find((emp) => emp.machine_id === machineId);
+    return employee?.late_tolerance_minutes == null
+      ? gracePeriodMinutes
+      : Math.max(0, Number(employee.late_tolerance_minutes) || 0);
+  };
+
+  const calculateLateMinutes = (inTime24: string, toleranceMinutes = gracePeriodMinutes) => {
     if (!inTime24 || inTime24 === '--:--') return 0;
     const [inH, inM] = inTime24.split(':').map(Number);
     const inTotalMins = inH * 60 + inM;
     const [startH, startM] = shiftStartTime.split(':').map(Number);
     const expectedMins = startH * 60 + startM;
+    const toleranceCutoff = expectedMins + toleranceMinutes;
 
-    if (inTotalMins > expectedMins + gracePeriodMinutes) {
-      return inTotalMins - expectedMins;
-    }
-    return 0;
+    return Math.max(0, inTotalMins - toleranceCutoff);
   };
 
-  const normalizeAttendanceRecord = (record: DailyPunch): DailyPunch => {
+  const normalizeAttendanceRecord = (record: DailyPunch, machineId?: string): DailyPunch => {
     const inMinutes = record.inTime && record.inTime !== '--:--'
       ? record.inTime.split(':').map(Number).reduce((total, value, index) => total + (index === 0 ? value * 60 : value), 0)
       : -1;
@@ -249,7 +259,10 @@ export default function SalarySystem() {
     const isManualLeaveOrHoliday = record.status === 'L' || record.status === 'H';
 
     if (record.inTime && record.inTime !== '--:--' && inMinutes >= 0) {
-      const lateMinutes = calculateLateMinutes(record.inTime);
+      const lateMinutes = calculateLateMinutes(
+        record.inTime,
+        machineId ? getEmployeeTolerance(machineId) : gracePeriodMinutes
+      );
       const totalHours = outMinutes > inMinutes
         ? Math.max(0, Number(((outMinutes - inMinutes) / 60).toFixed(2)))
         : 0;
@@ -327,7 +340,7 @@ export default function SalarySystem() {
           }
 
           const otHours = totalHours > 8 ? parseFloat((totalHours - 8).toFixed(1)) : 0;
-          const lateMins = calculateLateMinutes(rawIn);
+          const lateMins = calculateLateMinutes(rawIn, getEmployeeTolerance(mId));
 
           dbRows.push({
             machine_id: mId,
@@ -387,7 +400,10 @@ export default function SalarySystem() {
         mobile: String(row['Mobile'] || '').trim(),
         salary_type: String(row['Type'] || 'Monthly').toLowerCase().includes('week') ? 'Weekly' : 'Monthly',
         salary: String(row['Salary'] || '0').trim(),
-        status: String(row['Status'] || 'Active').toLowerCase().includes('resign') ? 'Resigned' : 'Active'
+        status: String(row['Status'] || 'Active').toLowerCase().includes('resign') ? 'Resigned' : 'Active',
+        late_tolerance_minutes: row['Late Tolerance'] === undefined || row['Late Tolerance'] === ''
+          ? null
+          : Math.max(0, Number(row['Late Tolerance']) || 0)
       }));
 
       if (importedEmployees.length > 0) {
@@ -481,7 +497,7 @@ export default function SalarySystem() {
     setLoading(true);
 
     const dbRows = Object.keys(tempEmpAttendance).map(dateKey => {
-      const rec = normalizeAttendanceRecord(tempEmpAttendance[dateKey]);
+      const rec = normalizeAttendanceRecord(tempEmpAttendance[dateKey], selectedEmpForEdit.machine_id);
       return {
         machine_id: selectedEmpForEdit.machine_id,
         punch_date: dateKey,
@@ -508,6 +524,72 @@ export default function SalarySystem() {
     setLoading(false);
   };
 
+  const autoFillMissingPunchTimes = () => {
+    if (!selectedEmpForEdit) return;
+
+    const inTime = window.prompt('Enter standard IN time for missing punches (for example, 08:00):', '08:00');
+    if (!inTime) return;
+
+    const outTime = window.prompt('Enter standard OUT time for missing punches (for example, 17:00):', '17:00');
+    if (!outTime) return;
+
+    const normalizedInTime = inTime.trim();
+    const normalizedOutTime = outTime.trim();
+    const isValidTime = (value: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+
+    if (!isValidTime(normalizedInTime) || !isValidTime(normalizedOutTime)) {
+      alert('Please enter both times in HH:MM format, for example 08:00 and 17:00.');
+      return;
+    }
+
+    const updatedAttendance = Object.fromEntries(
+      Object.entries(tempEmpAttendance).map(([dateKey, record]) => {
+        const hasInTime = record.inTime && record.inTime !== '--:--';
+        const hasOutTime = record.outTime && record.outTime !== '--:--';
+
+        if (hasInTime && hasOutTime) return [dateKey, record];
+        if (!hasInTime && !hasOutTime) return [dateKey, record];
+
+        return [dateKey, normalizeAttendanceRecord({
+          ...record,
+          inTime: hasInTime ? record.inTime : normalizedInTime,
+          outTime: hasOutTime ? record.outTime : normalizedOutTime
+        }, selectedEmpForEdit.machine_id)];
+      })
+    );
+
+    setTempEmpAttendance(updatedAttendance);
+  };
+
+  const autoFillMissingInTime = () => {
+    if (!selectedEmpForEdit) return;
+
+    const inTime = window.prompt('Enter IN time for missing punches (for example, 08:00):', '08:00');
+    if (!inTime) return;
+
+    const normalizedInTime = inTime.trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(normalizedInTime)) {
+      alert('Please enter IN time in HH:MM format, for example 08:00.');
+      return;
+    }
+
+    const updatedAttendance = Object.fromEntries(
+      Object.entries(tempEmpAttendance).map(([dateKey, record]) => {
+        const hasInTime = record.inTime && record.inTime !== '--:--';
+        const hasOutTime = record.outTime && record.outTime !== '--:--';
+
+        if (hasInTime || !hasOutTime) return [dateKey, record];
+
+        return [dateKey, normalizeAttendanceRecord({
+          ...record,
+          inTime: normalizedInTime
+        }, selectedEmpForEdit.machine_id)];
+      })
+    );
+
+    setTempEmpAttendance(updatedAttendance);
+  };
+
   const togglePaidStatus = (machineId: string) => {
     const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
     const currentStatus = currentData.paidStatus?.[machineId] || false;
@@ -525,18 +607,24 @@ export default function SalarySystem() {
 
     return employees.filter(e => e.status === 'Active').map((emp) => {
       const empAtt = monthData.attendance?.[emp.machine_id] || {};
-      const presentDays = Object.values(empAtt).filter(a => a.status === 'P').length;
-      const leaveDays = Object.values(empAtt).filter(a => a.status === 'L').length;
-      const holidayDays = Object.values(empAtt).filter(a => a.status === 'H').length;
-      const totalOT = Object.values(empAtt).reduce((sum, a) => sum + (Number(a.overtimeHours) || 0), 0);
-      const totalLateCount = Object.values(empAtt).filter(a => a.lateMinutes > 0).length;
+      const entries = Object.values(empAtt);
+      const presentDays = entries.filter(a => a.status === 'P').length;
+      const leaveDays = entries.filter(a => a.status === 'L').length;
+      const holidayDays = entries.filter(a => a.status === 'H').length;
+      const totalOT = entries.reduce((sum, a) => sum + (Number(a.overtimeHours) || 0), 0);
+      const totalLateCount = entries.filter(a => a.lateMinutes > 0).length;
+      const totalLateMinutes = entries.reduce((sum, a) => sum + (Number(a.lateMinutes) || 0), 0);
 
       const workingDays = emp.salary_type === 'Weekly' ? 6 : totalWorkingDays;
       const paidDaysCount = presentDays + leaveDays + holidayDays;
       const absentDays = Math.max(0, workingDays - paidDaysCount);
       
       const basic = parseFloat(emp.salary) || 0;
-      const deduction = (basic / workingDays) * absentDays;
+      const perDaySalary = workingDays > 0 ? basic / workingDays : 0;
+      const absenceDeduction = perDaySalary * absentDays;
+      const lateMinuteRate = perDaySalary / (8 * 60);
+      const lateDeduction = totalLateMinutes * lateMinuteRate;
+      const deduction = absenceDeduction + lateDeduction;
       const overtimePay = totalOT * 200;
       const netSalary = Math.max(0, basic - deduction + overtimePay);
 
@@ -551,6 +639,7 @@ export default function SalarySystem() {
         totalHolidays: holidayDays,
         totalAbsentDays: absentDays,
         totalLateCount,
+        totalLateMinutes,
         overtimeHours: totalOT,
         deduction,
         netSalary,
@@ -696,6 +785,14 @@ export default function SalarySystem() {
                   onChange={(e) => setFormSalary(e.target.value)} 
                   className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500 font-mono"
                   required
+                />
+                <input 
+                  type="number" 
+                  min="0"
+                  placeholder={`Late Tolerance (mins, default ${gracePeriodMinutes})`}
+                  value={formLateTolerance}
+                  onChange={(e) => setFormLateTolerance(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500 font-mono"
                 />
                 <select 
                   value={formStatus} 
@@ -961,7 +1058,7 @@ export default function SalarySystem() {
                         const updated = normalizeAttendanceRecord({
                           ...rec,
                           inTime: e.target.value || '--:--'
-                        });
+                        }, selectedEmpForEdit.machine_id);
 
                         setTempEmpAttendance({
                           ...tempEmpAttendance,
@@ -977,7 +1074,7 @@ export default function SalarySystem() {
                         const updated = normalizeAttendanceRecord({
                           ...rec,
                           outTime: e.target.value || '--:--'
-                        });
+                        }, selectedEmpForEdit.machine_id);
 
                         setTempEmpAttendance({
                           ...tempEmpAttendance,
@@ -1020,6 +1117,7 @@ export default function SalarySystem() {
 
             <div className="p-3 border-t border-slate-800 bg-slate-900/80 flex justify-end space-x-2">
               <button onClick={() => setSelectedEmpForEdit(null)} className="px-3 py-1.5 border border-slate-800 rounded-lg text-xs text-slate-300 hover:bg-slate-800">Cancel</button>
+              <button onClick={autoFillMissingPunchTimes} className="px-3 py-1.5 border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 rounded-lg text-xs font-semibold hover:bg-cyan-500/20">Fill All Blank Times</button>
               <button onClick={saveEmpAttendance} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-500 flex items-center space-x-1">
                 <Save size={13} /><span>Save to DB</span>
               </button>
