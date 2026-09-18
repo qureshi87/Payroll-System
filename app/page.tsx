@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 import { 
   Users, Clock, DollarSign, Download, Trash2, 
-  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, Clock3, RefreshCw, UserPlus 
+  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, RefreshCw, UserPlus 
 } from 'lucide-react';
 
 interface Employee {
@@ -50,7 +50,6 @@ export default function SalarySystem() {
     '2026-09': { attendance: {}, paidStatus: {} }
   });
 
-  // Manual Employee Form States
   const [formMachineId, setFormMachineId] = useState<string>('');
   const [formName, setFormName] = useState<string>('');
   const [formDesignation, setFormDesignation] = useState<string>('');
@@ -117,7 +116,6 @@ export default function SalarySystem() {
     fetchData();
   }, [selectedMonth]);
 
-  // Handle Manual Employee Submit
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formMachineId || !formName || !formSalary) {
@@ -789,7 +787,7 @@ export default function SalarySystem() {
                       <td className="p-4 font-bold text-emerald-400 font-mono">Rs. {Math.round(item.netSalary).toLocaleString()}</td>
                       <td className="p-4 text-center">
                         <button onClick={() => togglePaidStatus(item.machineId)} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all flex items-center space-x-1 mx-auto ${item.isPaid ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
-                          {item.isPaid ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}
+                          {item.isPaid ? <CheckCircle2 size={11} /> : <Clock size={11} />}
                           <span>{item.isPaid ? 'PAID' : 'UNPAID'}</span>
                         </button>
                       </td>
