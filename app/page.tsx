@@ -1,21 +1,22 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { supabase } from '@/lib/supabase';
 import { 
   Users, Clock, DollarSign, Download, Trash2, 
-  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, ChevronLeft, CheckCircle2, Clock3, UserPlus, Pencil
+  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, Clock3, RefreshCw
 } from 'lucide-react';
 
 interface Employee {
-  id: number;
-  machineId: string;
+  id?: number;
+  machine_id: string;
   name: string;
   designation: string;
   dept: string;
   mobile: string;
-  salaryType: 'Monthly' | 'Weekly';
+  salary_type: 'Monthly' | 'Weekly';
   salary: string;
   status: 'Active' | 'Resigned';
 }
@@ -38,17 +39,13 @@ interface MonthlyData {
 
 export default function SalarySystem() {
   const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('attendance');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
+  const [loading, setLoading] = useState<boolean>(false);
 
   const [shiftStartTime, setShiftStartTime] = useState<string>('08:00');
   const [gracePeriodMinutes, setGracePeriodMinutes] = useState<number>(15);
 
-  const [employees, setEmployees] = useState<Employee[]>([
-    { id: 1, machineId: '8383', name: 'Ali Raza', designation: 'Stitcher', dept: 'Production', mobile: '03001234567', salaryType: 'Monthly', salary: '45000', status: 'Active' },
-    { id: 2, machineId: '2132', name: 'Usman Ahmed', designation: 'HR Officer', dept: 'HR', mobile: '03217654321', salaryType: 'Monthly', salary: '65000', status: 'Active' }
-  ]);
-
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({
     '2026-09': { attendance: {}, paidStatus: {} }
   });
@@ -56,106 +53,62 @@ export default function SalarySystem() {
   const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
   const [tempEmpAttendance, setTempEmpAttendance] = useState<{ [date: string]: DailyPunch }>({});
   const [totalWorkingDays] = useState<number>(30);
-  const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
-  const [newEmployee, setNewEmployee] = useState({
-    machineId: '',
-    name: '',
-    designation: '',
-    dept: 'Production',
-    mobile: '',
-    salaryType: 'Monthly' as Employee['salaryType'],
-    salary: '',
-    status: 'Active' as Employee['status']
-  });
 
-  const resetEmployeeForm = () => {
-    setEditingEmployeeId(null);
-    setNewEmployee({
-      machineId: '',
-      name: '',
-      designation: '',
-      dept: 'Production',
-      mobile: '',
-      salaryType: 'Monthly',
-      salary: '',
-      status: 'Active'
-    });
-  };
+  // Fetch Employees & Attendance from Supabase
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch Employees
+      const { data: empData, error: empError } = await supabase
+        .from('employees')
+        .select('*')
+        .order('id', { ascending: true });
 
-  const saveEmployee = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+      if (empError) console.error('Error fetching employees:', empError);
+      else if (empData) setEmployees(empData);
 
-    const machineId = newEmployee.machineId.trim();
-    const name = newEmployee.name.trim();
-    const salary = newEmployee.salary.trim();
+      // 2. Fetch Attendance
+      const { data: attData, error: attError } = await supabase
+        .from('attendance_logs')
+        .select('*');
 
-    if (!machineId || !name || !salary) {
-      alert('Machine Code, Name and Salary are required.');
-      return;
-    }
+      if (attError) {
+        console.error('Error fetching attendance:', attError);
+      } else if (attData) {
+        const formattedAtt: { [machineId: string]: { [date: string]: DailyPunch } } = {};
+        
+        attData.forEach((row: any) => {
+          if (!formattedAtt[row.machine_id]) formattedAtt[row.machine_id] = {};
+          formattedAtt[row.machine_id][row.punch_date] = {
+            inTime: row.in_time || '--:--',
+            outTime: row.out_time || '--:--',
+            status: row.status || 'P',
+            overtimeHours: Number(row.overtime_hours) || 0,
+            totalHours: Number(row.total_hours) || 0,
+            shift: 'Morning',
+            lateMinutes: Number(row.late_minutes) || 0,
+            note: row.note || ''
+          };
+        });
 
-    if (employees.some((employee) => employee.machineId === machineId && employee.id !== editingEmployeeId)) {
-      alert('An employee with this Machine Code already exists.');
-      return;
-    }
-
-    const employeeDetails = {
-      machineId,
-      name,
-      designation: newEmployee.designation.trim(),
-      dept: newEmployee.dept.trim() || 'Production',
-      mobile: newEmployee.mobile.trim(),
-      salaryType: newEmployee.salaryType,
-      salary,
-      status: newEmployee.status
-    };
-
-    if (editingEmployeeId !== null) {
-      const currentEmployee = employees.find((employee) => employee.id === editingEmployeeId);
-      setEmployees((currentEmployees) => currentEmployees.map((employee) => (
-        employee.id === editingEmployeeId ? { ...employee, ...employeeDetails } : employee
-      )));
-
-      if (currentEmployee && currentEmployee.machineId !== machineId) {
-        setMonthlyRecords((currentRecords) => Object.fromEntries(
-          Object.entries(currentRecords).map(([monthKey, monthData]) => {
-            const attendance = { ...monthData.attendance };
-            const paidStatus = { ...monthData.paidStatus };
-            if (attendance[currentEmployee.machineId]) {
-              attendance[machineId] = attendance[currentEmployee.machineId];
-              delete attendance[currentEmployee.machineId];
-            }
-            if (paidStatus[currentEmployee.machineId] !== undefined) {
-              paidStatus[machineId] = paidStatus[currentEmployee.machineId];
-              delete paidStatus[currentEmployee.machineId];
-            }
-            return [monthKey, { ...monthData, attendance, paidStatus }];
-          })
-        ));
+        setMonthlyRecords(prev => ({
+          ...prev,
+          [selectedMonth]: {
+            ...prev[selectedMonth],
+            attendance: formattedAtt
+          }
+        }));
       }
-    } else {
-      setEmployees((currentEmployees) => [
-        ...currentEmployees,
-        { id: Date.now(), ...employeeDetails }
-      ]);
+    } catch (err) {
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
     }
-
-    resetEmployeeForm();
   };
 
-  const editEmployee = (employee: Employee) => {
-    setEditingEmployeeId(employee.id);
-    setNewEmployee({
-      machineId: employee.machineId,
-      name: employee.name,
-      designation: employee.designation,
-      dept: employee.dept,
-      mobile: employee.mobile,
-      salaryType: employee.salaryType,
-      salary: employee.salary,
-      status: employee.status
-    });
-  };
+  useEffect(() => {
+    fetchData();
+  }, [selectedMonth]);
 
   const format12Hour = (time24: string) => {
     if (!time24 || time24 === '--:--') return '--:--';
@@ -187,7 +140,7 @@ export default function SalarySystem() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const text = event.target?.result as string;
       if (!text) return;
 
@@ -220,12 +173,9 @@ export default function SalarySystem() {
         }
       });
 
-      const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
-      const newAtt = { ...currentData.attendance };
+      const dbRows: any[] = [];
 
       Object.keys(punchLogs).forEach((mId) => {
-        if (!newAtt[mId]) newAtt[mId] = {};
-
         Object.keys(punchLogs[mId]).forEach((dateStr) => {
           const times = punchLogs[mId][dateStr].sort();
           const rawIn = times[0];
@@ -241,28 +191,34 @@ export default function SalarySystem() {
           const otHours = totalHours > 8 ? parseFloat((totalHours - 8).toFixed(1)) : 0;
           const lateMins = calculateLateMinutes(rawIn);
 
-          const existingRecord = newAtt[mId]?.[dateStr];
-          const status = existingRecord?.status === 'L' || existingRecord?.status === 'H' ? existingRecord.status : 'P';
-
-          newAtt[mId][dateStr] = {
-            inTime: rawIn ? rawIn.substring(0, 5) : '--:--',
-            outTime: rawOut ? rawOut.substring(0, 5) : '--:--',
-            status,
-            overtimeHours: otHours,
-            totalHours,
-            shift: 'Morning',
-            lateMinutes: lateMins,
-            note: existingRecord?.note || (lateMins > 0 ? `Late ${lateMins}m` : '')
-          };
+          dbRows.push({
+            machine_id: mId,
+            punch_date: dateStr,
+            in_time: rawIn ? rawIn.substring(0, 5) : '--:--',
+            out_time: rawOut ? rawOut.substring(0, 5) : '--:--',
+            status: 'P',
+            overtime_hours: otHours,
+            total_hours: totalHours,
+            late_minutes: lateMins,
+            note: lateMins > 0 ? `Late ${lateMins}m` : ''
+          });
         });
       });
 
-      setMonthlyRecords({
-        ...monthlyRecords,
-        [selectedMonth]: { ...currentData, attendance: newAtt }
-      });
+      if (dbRows.length > 0) {
+        setLoading(true);
+        const { error } = await supabase
+          .from('attendance_logs')
+          .upsert(dbRows, { onConflict: 'machine_id,punch_date' });
 
-      alert('Biometric Machine Logs Processed Successfully!');
+        if (error) {
+          alert('Error saving logs to Supabase: ' + error.message);
+        } else {
+          alert('Biometric Logs Saved to Supabase Database!');
+          fetchData();
+        }
+        setLoading(false);
+      }
     };
 
     reader.readAsText(file);
@@ -274,41 +230,59 @@ export default function SalarySystem() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const data = evt.target?.result;
       if (!data) return;
 
       const workbook = XLSX.read(data, { type: 'binary' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData: Record<string, unknown>[] = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
 
-      const importedEmployees: Employee[] = jsonData.map((row, index) => ({
-        id: Date.now() + index,
-        machineId: String(row['Code'] || row['code'] || row['Machine ID'] || row['ID'] || '').trim() || `${1000 + index}`,
+      const importedEmployees = jsonData.map((row, index) => ({
+        machine_id: String(row['Code'] || row['code'] || row['Machine ID'] || row['ID'] || '').trim() || `${1000 + index}`,
         name: String(row['Employee Name'] || row['Name'] || '').trim() || 'Unnamed',
         designation: String(row['Designation'] || '').trim(),
         dept: String(row['Department'] || 'Production').trim(),
         mobile: String(row['Mobile'] || '').trim(),
-        salaryType: String(row['Type'] || 'Monthly').toLowerCase().includes('week') ? 'Weekly' : 'Monthly',
+        salary_type: String(row['Type'] || 'Monthly').toLowerCase().includes('week') ? 'Weekly' : 'Monthly',
         salary: String(row['Salary'] || '0').trim(),
         status: String(row['Status'] || 'Active').toLowerCase().includes('resign') ? 'Resigned' : 'Active'
       }));
 
       if (importedEmployees.length > 0) {
-        setEmployees(prev => [...prev, ...importedEmployees.filter(e => !prev.some(x => x.machineId === e.machineId))]);
-        alert('Employees Imported Successfully!');
+        setLoading(true);
+        const { error } = await supabase
+          .from('employees')
+          .upsert(importedEmployees, { onConflict: 'machine_id' });
+
+        if (error) {
+          alert('Error inserting employees: ' + error.message);
+        } else {
+          alert('Employees Synced with Database!');
+          fetchData();
+        }
+        setLoading(false);
       }
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
   };
 
+  const deleteEmployee = async (machineId: string) => {
+    if (!confirm('Are you sure you want to delete this employee?')) return;
+    setLoading(true);
+    const { error } = await supabase.from('employees').delete().eq('machine_id', machineId);
+    if (error) alert('Error: ' + error.message);
+    else fetchData();
+    setLoading(false);
+  };
+
   const openEmpCalendar = (emp: Employee) => {
     setSelectedEmpForEdit(emp);
-    const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machineId] || {};
+    const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machine_id] || {};
     
     const [year, month] = selectedMonth.split('-').map(Number);
-    const daysInMonth = new Date(year, month, 0).getDate();
+    const daysInMonth = new Date(year, month - 1, dayCount(year, month)).getDate();
     
     const fullMonthDates: { [date: string]: DailyPunch } = {};
     for (let day = 1; day <= daysInMonth; day++) {
@@ -337,20 +311,38 @@ export default function SalarySystem() {
     setTempEmpAttendance(fullMonthDates);
   };
 
-  const saveEmpAttendance = () => {
+  const dayCount = (y: number, m: number) => new Date(y, m, 0).getDate();
+
+  const saveEmpAttendance = async () => {
     if (!selectedEmpForEdit) return;
-    const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
-    setMonthlyRecords({
-      ...monthlyRecords,
-      [selectedMonth]: {
-        ...currentData,
-        attendance: {
-          ...currentData.attendance,
-          [selectedEmpForEdit.machineId]: tempEmpAttendance
-        }
-      }
+    setLoading(true);
+
+    const dbRows = Object.keys(tempEmpAttendance).map(dateKey => {
+      const rec = tempEmpAttendance[dateKey];
+      return {
+        machine_id: selectedEmpForEdit.machine_id,
+        punch_date: dateKey,
+        in_time: rec.inTime,
+        out_time: rec.outTime,
+        status: rec.status,
+        overtime_hours: rec.overtimeHours,
+        total_hours: rec.totalHours,
+        late_minutes: rec.lateMinutes,
+        note: rec.note || ''
+      };
     });
-    setSelectedEmpForEdit(null);
+
+    const { error } = await supabase
+      .from('attendance_logs')
+      .upsert(dbRows, { onConflict: 'machine_id,punch_date' });
+
+    if (error) alert('Error saving attendance: ' + error.message);
+    else {
+      alert('Attendance Updated in Database!');
+      fetchData();
+      setSelectedEmpForEdit(null);
+    }
+    setLoading(false);
   };
 
   const togglePaidStatus = (machineId: string) => {
@@ -369,14 +361,14 @@ export default function SalarySystem() {
     const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
 
     return employees.filter(e => e.status === 'Active').map((emp) => {
-      const empAtt = monthData.attendance?.[emp.machineId] || {};
+      const empAtt = monthData.attendance?.[emp.machine_id] || {};
       const presentDays = Object.values(empAtt).filter(a => a.status === 'P').length;
       const leaveDays = Object.values(empAtt).filter(a => a.status === 'L').length;
       const holidayDays = Object.values(empAtt).filter(a => a.status === 'H').length;
       const totalOT = Object.values(empAtt).reduce((sum, a) => sum + (Number(a.overtimeHours) || 0), 0);
       const totalLateCount = Object.values(empAtt).filter(a => a.lateMinutes > 0).length;
 
-      const workingDays = emp.salaryType === 'Weekly' ? 6 : totalWorkingDays;
+      const workingDays = emp.salary_type === 'Weekly' ? 6 : totalWorkingDays;
       const paidDaysCount = presentDays + leaveDays + holidayDays;
       const absentDays = Math.max(0, workingDays - paidDaysCount);
       
@@ -386,7 +378,7 @@ export default function SalarySystem() {
       const netSalary = Math.max(0, basic - deduction + overtimePay);
 
       return {
-        machineId: emp.machineId,
+        machineId: emp.machine_id,
         name: emp.name,
         dept: emp.dept,
         designation: emp.designation,
@@ -399,7 +391,7 @@ export default function SalarySystem() {
         overtimeHours: totalOT,
         deduction,
         netSalary,
-        isPaid: monthData.paidStatus?.[emp.machineId] || false
+        isPaid: monthData.paidStatus?.[emp.machine_id] || false
       };
     });
   };
@@ -444,14 +436,17 @@ export default function SalarySystem() {
               <Cpu size={24} />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight text-white">Attendance & Payroll System</h1>
-              <p className="text-xs text-slate-400">Automated Machine Time Detection Engine</p>
+              <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                Attendance & Payroll System
+                {loading && <RefreshCw size={14} className="animate-spin text-indigo-400" />}
+              </h1>
+              <p className="text-xs text-slate-400">Connected to Supabase Database</p>
             </div>
           </div>
           
           <div className="flex items-center space-x-3 bg-slate-900/60 px-3.5 py-1.5 rounded-xl border border-slate-700/80">
             <Calendar className="text-indigo-400" size={15} />
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Salary Month:</span>
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Cycle:</span>
             <input 
               type="month" 
               value={selectedMonth} 
@@ -461,68 +456,28 @@ export default function SalarySystem() {
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row items-stretch gap-5">
-          <aside className={`${sidebarOpen ? 'w-full md:w-52' : 'w-full md:w-14'} shrink-0 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50 transition-all duration-200`}>
-            <div className={`flex items-center ${sidebarOpen ? 'justify-between px-2' : 'justify-center'} pb-2 border-b border-slate-700/50`}>
-              {sidebarOpen && <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Navigation</span>}
-              <button onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Hide navigation' : 'Show navigation'} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-700/60 transition-colors">
-                {sidebarOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-              </button>
-            </div>
-            <nav className="flex md:flex-col gap-1 mt-2">
-              <button onClick={() => setActiveTab('employees')} title="Employees" className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'employees' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
-                <Users size={14} />{sidebarOpen && <span>Employees</span>}
-              </button>
-              <button onClick={() => setActiveTab('attendance')} title="Attendance Log" className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
-                <Clock size={14} />{sidebarOpen && <span>Attendance Log</span>}
-              </button>
-              <button onClick={() => setActiveTab('payroll')} title="Payroll" className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'payroll' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
-                <DollarSign size={14} />{sidebarOpen && <span>Payroll</span>}
-              </button>
-            </nav>
-          </aside>
-
-          <main className="min-w-0 flex-1">
+        {/* Tab Selection */}
+        <div className="flex space-x-1.5 bg-slate-800/60 p-1 rounded-xl border border-slate-700/50 max-w-max">
+          <button onClick={() => setActiveTab('employees')} className={`flex items-center space-x-2 px-4 py-2 text-xs font-medium rounded-lg transition-all ${activeTab === 'employees' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
+            <Users size={14} /><span>Employees</span>
+          </button>
+          <button onClick={() => setActiveTab('attendance')} className={`flex items-center space-x-2 px-4 py-2 text-xs font-medium rounded-lg transition-all ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
+            <Clock size={14} /><span> Attendance Log</span>
+          </button>
+          <button onClick={() => setActiveTab('payroll')} className={`flex items-center space-x-2 px-4 py-2 text-xs font-medium rounded-lg transition-all ${activeTab === 'payroll' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
+            <DollarSign size={14} /><span>Payroll</span>
+          </button>
+        </div>
 
         {/* TAB 1: EMPLOYEES */}
         {activeTab === 'employees' && (
           <div className="space-y-6">
-            <form onSubmit={saveEmployee} className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-4">
-              <div className="flex items-center space-x-2">
-                <UserPlus className="text-indigo-400" size={18} />
-                <div>
-                  <h2 className="text-xs font-bold text-white uppercase tracking-wider">{editingEmployeeId === null ? 'Add Employee Manually' : 'Update Employee'}</h2>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{editingEmployeeId === null ? 'Enter employee details and add them to the directory.' : 'Update employee details and status.'}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                <input required value={newEmployee.machineId} onChange={(e) => setNewEmployee({ ...newEmployee, machineId: e.target.value })} placeholder="Machine Code *" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input required value={newEmployee.name} onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })} placeholder="Employee Name *" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input value={newEmployee.designation} onChange={(e) => setNewEmployee({ ...newEmployee, designation: e.target.value })} placeholder="Designation" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input value={newEmployee.dept} onChange={(e) => setNewEmployee({ ...newEmployee, dept: e.target.value })} placeholder="Department" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input value={newEmployee.mobile} onChange={(e) => setNewEmployee({ ...newEmployee, mobile: e.target.value })} placeholder="Mobile Number" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <select value={newEmployee.salaryType} onChange={(e) => setNewEmployee({ ...newEmployee, salaryType: e.target.value as Employee['salaryType'] })} className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
-                  <option value="Monthly">Monthly Salary</option>
-                  <option value="Weekly">Weekly Salary</option>
-                </select>
-                <input required type="number" min="0" value={newEmployee.salary} onChange={(e) => setNewEmployee({ ...newEmployee, salary: e.target.value })} placeholder="Basic Salary *" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <select value={newEmployee.status} onChange={(e) => setNewEmployee({ ...newEmployee, status: e.target.value as Employee['status'] })} className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
-                  <option value="Active">Active</option>
-                  <option value="Resigned">Resigned</option>
-                </select>
-                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg p-2.5 font-semibold flex items-center justify-center space-x-2 transition-colors">
-                  {editingEmployeeId === null ? <UserPlus size={14} /> : <Save size={14} />}<span>{editingEmployeeId === null ? 'Add Employee' : 'Update Employee'}</span>
-                </button>
-                {editingEmployeeId !== null && <button type="button" onClick={resetEmployeeForm} className="bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg p-2.5 font-semibold transition-colors">Cancel</button>}
-              </div>
-            </form>
-
             <div className="bg-slate-800/40 border border-dashed border-slate-700 p-5 rounded-2xl flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <FileSpreadsheet className="text-emerald-400" size={20} />
                 <div>
                   <h3 className="text-xs font-semibold text-white">Import Employee List</h3>
-                  <p className="text-[11px] text-slate-400">Supported formats: .xlsx, .csv</p>
+                  <p className="text-[11px] text-slate-400">Supported formats: .xlsx, .csv (Auto-saves to DB)</p>
                 </div>
               </div>
               <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 px-4 py-2 rounded-xl text-xs font-medium transition-all">
@@ -543,28 +498,19 @@ export default function SalarySystem() {
                     <th className="p-4">Designation</th>
                     <th className="p-4">Department</th>
                     <th className="p-4">Basic Salary</th>
-                    <th className="p-4">Status</th>
                     <th className="p-4 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/40 text-slate-300">
                   {employees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-slate-700/30 transition-colors">
-                      <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machineId}</td>
+                    <tr key={emp.machine_id} className="hover:bg-slate-700/30 transition-colors">
+                      <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machine_id}</td>
                       <td className="p-4 font-medium text-white">{emp.name}</td>
                       <td className="p-4 text-slate-400">{emp.designation}</td>
                       <td className="p-4 text-slate-400">{emp.dept}</td>
                       <td className="p-4 font-semibold text-emerald-400">Rs. {Number(emp.salary).toLocaleString()}</td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${emp.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                          {emp.status}
-                        </span>
-                      </td>
                       <td className="p-4 text-center">
-                        <div className="flex justify-center items-center space-x-2">
-                          <button onClick={() => editEmployee(emp)} title="Edit employee" className="text-slate-500 hover:text-indigo-400 transition-colors p-1"><Pencil size={15} /></button>
-                          <button onClick={() => setEmployees(employees.filter(e => e.id !== emp.id))} title="Delete employee" className="text-slate-500 hover:text-rose-400 transition-colors p-1"><Trash2 size={15} /></button>
-                        </div>
+                        <button onClick={() => deleteEmployee(emp.machine_id)} className="text-slate-500 hover:text-rose-400 transition-colors p-1"><Trash2 size={15} /></button>
                       </td>
                     </tr>
                   ))}
@@ -580,7 +526,6 @@ export default function SalarySystem() {
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               
-              {/* Config Panel */}
               <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl space-y-4 md:col-span-1">
                 <div className="flex items-center space-x-2 text-indigo-400 font-semibold text-xs">
                   <Settings size={16} />
@@ -598,7 +543,6 @@ export default function SalarySystem() {
                 </div>
               </div>
 
-              {/* Upload Card */}
               <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl space-y-3 md:col-span-2 flex flex-col justify-center items-center text-center">
                 <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-full mb-1">
                   <Upload size={22} />
@@ -615,7 +559,6 @@ export default function SalarySystem() {
 
             </div>
 
-            {/* Attendance Overview Table */}
             <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden shadow-xl">
               <div className="p-4 border-b border-slate-700/60 bg-slate-800/80">
                 <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Detected Punch Records ({selectedMonth})</h2>
@@ -633,7 +576,7 @@ export default function SalarySystem() {
                 </thead>
                 <tbody className="divide-y divide-slate-700/40 text-slate-300">
                   {employees.map((emp) => {
-                    const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machineId] || {};
+                    const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machine_id] || {};
                     const presentCount = Object.values(empAtt).filter(a => a.status === 'P').length;
                     const leaveCount = Object.values(empAtt).filter(a => a.status === 'L').length;
                     const holidayCount = Object.values(empAtt).filter(a => a.status === 'H').length;
@@ -641,8 +584,8 @@ export default function SalarySystem() {
                     const otHours = Object.values(empAtt).reduce((s, a) => s + (Number(a.overtimeHours) || 0), 0);
 
                     return (
-                      <tr key={emp.id} className="hover:bg-slate-700/30 transition-colors">
-                        <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machineId}</td>
+                      <tr key={emp.machine_id} className="hover:bg-slate-700/30 transition-colors">
+                        <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machine_id}</td>
                         <td className="p-4 font-medium text-white">{emp.name}</td>
                         <td className="p-4 font-semibold space-x-1.5">
                           <span className="text-emerald-400">{presentCount} P</span>
@@ -732,8 +675,6 @@ export default function SalarySystem() {
           </div>
         )}
 
-          </main>
-        </div>
       </div>
 
       {/* MODAL */}
@@ -743,7 +684,7 @@ export default function SalarySystem() {
             <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
               <div>
                 <h3 className="font-bold text-white text-xs">{selectedEmpForEdit.name} - Punch Logs</h3>
-                <p className="text-[11px] text-slate-400 font-mono">Code: {selectedEmpForEdit.machineId} | Month: {selectedMonth}</p>
+                <p className="text-[11px] text-slate-400 font-mono">Code: {selectedEmpForEdit.machine_id} | Month: {selectedMonth}</p>
               </div>
               <button onClick={() => setSelectedEmpForEdit(null)} className="text-slate-400 hover:text-white p-1 rounded-lg"><X size={16} /></button>
             </div>
@@ -778,7 +719,7 @@ export default function SalarySystem() {
                       value={rec.status} 
                       onChange={(e) => setTempEmpAttendance({
                         ...tempEmpAttendance,
-                        [dateKey]: { ...rec, status: e.target.value as DailyPunch['status'] }
+                        [dateKey]: { ...rec, status: e.target.value as any }
                       })}
                       className="p-1 bg-slate-800 border border-slate-700 rounded text-xs text-white focus:outline-none"
                     >
@@ -814,7 +755,7 @@ export default function SalarySystem() {
             <div className="p-3 border-t border-slate-800 bg-slate-800/30 flex justify-end space-x-2">
               <button onClick={() => setSelectedEmpForEdit(null)} className="px-3 py-1.5 border border-slate-700 rounded-lg text-xs text-slate-300 hover:bg-slate-800">Cancel</button>
               <button onClick={saveEmpAttendance} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-500 flex items-center space-x-1">
-                <Save size={13} /><span>Save</span>
+                <Save size={13} /><span>Save to DB</span>
               </button>
             </div>
           </div>
