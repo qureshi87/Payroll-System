@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { supabase } from '@/supabase';
 import { 
-  Users, Clock, DollarSign, Download, Trash2, 
+  Users, Clock, DollarSign, Download, Trash2, Pencil,
   Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, RefreshCw, UserPlus 
 } from 'lucide-react';
 
@@ -58,6 +58,7 @@ export default function SalarySystem() {
   const [formSalaryType, setFormSalaryType] = useState<'Monthly' | 'Weekly'>('Monthly');
   const [formSalary, setFormSalary] = useState<string>('');
   const [formStatus, setFormStatus] = useState<'Active' | 'Resigned'>('Active');
+  const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
 
   const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
   const [tempEmpAttendance, setTempEmpAttendance] = useState<{ [date: string]: DailyPunch }>({});
@@ -121,6 +122,31 @@ export default function SalarySystem() {
     fetchData();
   }, [selectedMonth]);
 
+  const resetEmployeeForm = () => {
+    setEditingEmployeeId(null);
+    setFormMachineId('');
+    setFormName('');
+    setFormDesignation('');
+    setFormDept('Production');
+    setFormMobile('');
+    setFormSalaryType('Monthly');
+    setFormSalary('');
+    setFormStatus('Active');
+  };
+
+  const handleEditEmployee = (emp: Employee) => {
+    setEditingEmployeeId(emp.id ?? null);
+    setFormMachineId(emp.machine_id);
+    setFormName(emp.name);
+    setFormDesignation(emp.designation || '');
+    setFormDept(emp.dept || 'Production');
+    setFormMobile(emp.mobile || '');
+    setFormSalaryType(emp.salary_type || 'Monthly');
+    setFormSalary(emp.salary || '');
+    setFormStatus(emp.status || 'Active');
+    setActiveTab('employees');
+  };
+
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) {
@@ -133,34 +159,59 @@ export default function SalarySystem() {
       return;
     }
 
+    const trimmedMachineId = formMachineId.trim();
+    const duplicateExists = employees.some(
+      (emp) => emp.machine_id === trimmedMachineId && emp.id !== editingEmployeeId
+    );
+
+    if (duplicateExists) {
+      alert('This machine code already exists. Please use a different one.');
+      return;
+    }
+
     setLoading(true);
     const newEmp = {
-      machine_id: formMachineId.trim(),
+      machine_id: trimmedMachineId,
       name: formName.trim(),
       designation: formDesignation.trim(),
-      dept: formDept.trim(),
+      dept: formDept.trim() || 'Production',
       mobile: formMobile.trim(),
       salary_type: formSalaryType,
       salary: formSalary,
       status: formStatus
     };
 
-    const { error } = await supabase
-      .from('employees')
-      .upsert([newEmp], { onConflict: 'machine_id' });
+    try {
+      if (editingEmployeeId !== null) {
+        const { error } = await supabase
+          .from('employees')
+          .update(newEmp)
+          .eq('id', editingEmployeeId);
 
-    if (error) {
-      alert('Error adding employee: ' + error.message);
-    } else {
-      alert('Employee Added Successfully!');
-      setFormMachineId('');
-      setFormName('');
-      setFormDesignation('');
-      setFormMobile('');
-      setFormSalary('');
+        if (error) {
+          alert('Error updating employee: ' + error.message);
+          return;
+        }
+
+        alert('Employee Updated Successfully!');
+      } else {
+        const { error } = await supabase
+          .from('employees')
+          .upsert([newEmp], { onConflict: 'machine_id' });
+
+        if (error) {
+          alert('Error adding employee: ' + error.message);
+          return;
+        }
+
+        alert('Employee Added Successfully!');
+      }
+
+      resetEmployeeForm();
       fetchData();
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const format12Hour = (time24: string) => {
@@ -551,9 +602,9 @@ export default function SalarySystem() {
             <form onSubmit={handleAddEmployee} className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
               <div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <UserPlus size={16} className="text-indigo-400" /> Add Employee Manually
+                  <UserPlus size={16} className="text-indigo-400" /> {editingEmployeeId !== null ? 'Edit Employee' : 'Add Employee Manually'}
                 </h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">Enter employee details and add them to the directory.</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{editingEmployeeId !== null ? 'Update employee details and status.' : 'Enter employee details and add them to the directory.'}</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -620,9 +671,14 @@ export default function SalarySystem() {
                 </select>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end pt-2 space-x-2">
+                {editingEmployeeId !== null && (
+                  <button type="button" onClick={resetEmployeeForm} className="bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 py-2.5 rounded-xl text-xs transition-all">
+                    Cancel
+                  </button>
+                )}
                 <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition-all shadow-lg shadow-indigo-600/20">
-                  <UserPlus size={14} /><span>Add Employee</span>
+                  <UserPlus size={14} /><span>{editingEmployeeId !== null ? 'Update Employee' : 'Add Employee'}</span>
                 </button>
               </div>
             </form>
@@ -673,7 +729,8 @@ export default function SalarySystem() {
                         </span>
                       </td>
                       <td className="p-4 text-center space-x-2">
-                        <button onClick={() => deleteEmployee(emp.machine_id, emp.id)} className="text-slate-500 hover:text-rose-400 transition-colors p-1"><Trash2 size={15} /></button>
+                        <button onClick={() => handleEditEmployee(emp)} className="text-slate-500 hover:text-indigo-400 transition-colors p-1" title="Edit employee"><Pencil size={15} /></button>
+                        <button onClick={() => deleteEmployee(emp.machine_id, emp.id)} className="text-slate-500 hover:text-rose-400 transition-colors p-1" title="Delete employee"><Trash2 size={15} /></button>
                       </td>
                     </tr>
                   ))}
@@ -861,8 +918,24 @@ export default function SalarySystem() {
                 return (
                   <div key={dateKey} className={`grid grid-cols-6 items-center text-xs border-b border-slate-800/40 pb-2 gap-2 ${isSunday ? 'bg-purple-500/5 p-1 rounded-lg' : ''}`}>
                     <span className="font-mono text-slate-300 font-medium text-[11px]">{dateKey}</span>
-                    <span className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-indigo-300 border border-slate-800">{format12Hour(rec.inTime)}</span>
-                    <span className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-slate-300 border border-slate-800">{format12Hour(rec.outTime)}</span>
+                    <input
+                      type="time"
+                      value={rec.inTime && rec.inTime !== '--:--' ? rec.inTime : ''}
+                      onChange={(e) => setTempEmpAttendance({
+                        ...tempEmpAttendance,
+                        [dateKey]: { ...rec, inTime: e.target.value || '--:--' }
+                      })}
+                      className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-indigo-300 border border-slate-800 focus:outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={rec.outTime && rec.outTime !== '--:--' ? rec.outTime : ''}
+                      onChange={(e) => setTempEmpAttendance({
+                        ...tempEmpAttendance,
+                        [dateKey]: { ...rec, outTime: e.target.value || '--:--' }
+                      })}
+                      className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-slate-300 border border-slate-800 focus:outline-none"
+                    />
 
                     <select 
                       value={rec.status} 
