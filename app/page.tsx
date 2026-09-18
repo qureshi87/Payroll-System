@@ -7,7 +7,7 @@ import {
   Users, Clock, DollarSign, Download, 
   Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil
 } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient'; // Aapki supabase client file path
+import { supabase } from '@/supabaseClient';
 
 interface Employee {
   id: number;
@@ -74,11 +74,18 @@ export default function SalarySystem() {
 
   const fetchEmployees = async () => {
     setLoading(true);
+
+    if (!supabase) {
+      setLoading(false);
+      alert('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+      return;
+    }
+
     const { data, error } = await supabase.from('employees').select('*');
     if (error) {
       console.error('Error loading employees:', error.message);
     } else if (data) {
-      const formatted: Employee[] = data.map((e) => ({
+      const formatted: Employee[] = (data as Array<Record<string, any>>).map((e: Record<string, any>) => ({
         id: e.id,
         machineId: e.machine_id,
         name: e.name,
@@ -111,6 +118,11 @@ export default function SalarySystem() {
   // 2. Supabase Mein Employee Save / Update Karna
   const saveEmployee = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (!supabase) {
+      alert('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+      return;
+    }
 
     const machineId = newEmployee.machineId.trim();
     const name = newEmployee.name.trim();
@@ -314,6 +326,11 @@ export default function SalarySystem() {
       }));
 
       if (importedEmployeesPayload.length > 0) {
+        if (!supabase) {
+          alert('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+          return;
+        }
+
         const { error } = await supabase.from('employees').insert(importedEmployeesPayload);
         if (error) {
           alert('Error importing Excel: ' + error.message);
