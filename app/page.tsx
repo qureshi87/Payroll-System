@@ -1,12 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
-  Users, Clock, DollarSign, Download, Trash2, 
-  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, ChevronLeft, CheckCircle2, Clock3, UserPlus, Pencil
+  Users, Clock, DollarSign, Download, 
+  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil
 } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient'; // Aapki supabase client file path
 
 interface Employee {
   id: number;
@@ -44,11 +45,7 @@ export default function SalarySystem() {
   const [shiftStartTime, setShiftStartTime] = useState<string>('08:00');
   const [gracePeriodMinutes, setGracePeriodMinutes] = useState<number>(15);
 
-  const [employees, setEmployees] = useState<Employee[]>([
-    { id: 1, machineId: '8383', name: 'Ali Raza', designation: 'Stitcher', dept: 'Production', mobile: '03001234567', salaryType: 'Monthly', salary: '45000', status: 'Active' },
-    { id: 2, machineId: '2132', name: 'Usman Ahmed', designation: 'HR Officer', dept: 'HR', mobile: '03217654321', salaryType: 'Monthly', salary: '65000', status: 'Active' }
-  ]);
-
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({
     '2026-09': { attendance: {}, paidStatus: {} }
   });
@@ -57,6 +54,8 @@ export default function SalarySystem() {
   const [tempEmpAttendance, setTempEmpAttendance] = useState<{ [date: string]: DailyPunch }>({});
   const [totalWorkingDays] = useState<number>(30);
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+
   const [newEmployee, setNewEmployee] = useState({
     machineId: '',
     name: '',
@@ -67,6 +66,33 @@ export default function SalarySystem() {
     salary: '',
     status: 'Active' as Employee['status']
   });
+
+  // 1. Supabase Se Data Load Karna
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
+  const fetchEmployees = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('employees').select('*');
+    if (error) {
+      console.error('Error loading employees:', error.message);
+    } else if (data) {
+      const formatted: Employee[] = data.map((e) => ({
+        id: e.id,
+        machineId: e.machine_id,
+        name: e.name,
+        designation: e.designation || '',
+        dept: e.dept || 'Production',
+        mobile: e.mobile || '',
+        salaryType: e.salary_type || 'Monthly',
+        salary: e.salary || '0',
+        status: e.status || 'Active'
+      }));
+      setEmployees(formatted);
+    }
+    setLoading(false);
+  };
 
   const resetEmployeeForm = () => {
     setEditingEmployeeId(null);
@@ -82,7 +108,8 @@ export default function SalarySystem() {
     });
   };
 
-  const saveEmployee = (e: React.FormEvent<HTMLFormElement>) => {
+  // 2. Supabase Mein Employee Save / Update Karna
+  const saveEmployee = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     const machineId = newEmployee.machineId.trim();
@@ -94,53 +121,46 @@ export default function SalarySystem() {
       return;
     }
 
-    if (employees.some((employee) => employee.machineId === machineId && employee.id !== editingEmployeeId)) {
+    if (employees.some((emp) => emp.machineId === machineId && emp.id !== editingEmployeeId)) {
       alert('An employee with this Machine Code already exists.');
       return;
     }
 
-    const employeeDetails = {
-      machineId,
+    const payload = {
+      machine_id: machineId,
       name,
       designation: newEmployee.designation.trim(),
       dept: newEmployee.dept.trim() || 'Production',
       mobile: newEmployee.mobile.trim(),
-      salaryType: newEmployee.salaryType,
+      salary_type: newEmployee.salaryType,
       salary,
       status: newEmployee.status
     };
 
     if (editingEmployeeId !== null) {
-      const currentEmployee = employees.find((employee) => employee.id === editingEmployeeId);
-      setEmployees((currentEmployees) => currentEmployees.map((employee) => (
-        employee.id === editingEmployeeId ? { ...employee, ...employeeDetails } : employee
-      )));
+      const { error } = await supabase
+        .from('employees')
+        .update(payload)
+        .eq('id', editingEmployeeId);
 
-      if (currentEmployee && currentEmployee.machineId !== machineId) {
-        setMonthlyRecords((currentRecords) => Object.fromEntries(
-          Object.entries(currentRecords).map(([monthKey, monthData]) => {
-            const attendance = { ...monthData.attendance };
-            const paidStatus = { ...monthData.paidStatus };
-            if (attendance[currentEmployee.machineId]) {
-              attendance[machineId] = attendance[currentEmployee.machineId];
-              delete attendance[currentEmployee.machineId];
-            }
-            if (paidStatus[currentEmployee.machineId] !== undefined) {
-              paidStatus[machineId] = paidStatus[currentEmployee.machineId];
-              delete paidStatus[currentEmployee.machineId];
-            }
-            return [monthKey, { ...monthData, attendance, paidStatus }];
-          })
-        ));
+      if (error) {
+        alert('Error updating employee: ' + error.message);
+        return;
       }
     } else {
-      setEmployees((currentEmployees) => [
-        ...currentEmployees,
-        { id: Date.now(), ...employeeDetails }
-      ]);
+      const { error } = await supabase
+        .from('employees')
+        .insert([payload]);
+
+      if (error) {
+        alert('Error saving employee: ' + error.message);
+        return;
+      }
     }
 
+    await fetchEmployees();
     resetEmployeeForm();
+    alert('Employee saved successfully!');
   };
 
   const editEmployee = (employee: Employee) => {
@@ -269,12 +289,12 @@ export default function SalarySystem() {
     e.target.value = '';
   };
 
-  const handleExcelEmployeeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelEmployeeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const data = evt.target?.result;
       if (!data) return;
 
@@ -282,21 +302,25 @@ export default function SalarySystem() {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData: Record<string, unknown>[] = XLSX.utils.sheet_to_json(worksheet);
 
-      const importedEmployees: Employee[] = jsonData.map((row, index) => ({
-        id: Date.now() + index,
-        machineId: String(row['Code'] || row['code'] || row['Machine ID'] || row['ID'] || '').trim() || `${1000 + index}`,
+      const importedEmployeesPayload = jsonData.map((row, index) => ({
+        machine_id: String(row['Code'] || row['code'] || row['Machine ID'] || row['ID'] || '').trim() || `${1000 + index}`,
         name: String(row['Employee Name'] || row['Name'] || '').trim() || 'Unnamed',
         designation: String(row['Designation'] || '').trim(),
         dept: String(row['Department'] || 'Production').trim(),
         mobile: String(row['Mobile'] || '').trim(),
-        salaryType: String(row['Type'] || 'Monthly').toLowerCase().includes('week') ? 'Weekly' : 'Monthly',
+        salary_type: String(row['Type'] || 'Monthly').toLowerCase().includes('week') ? 'Weekly' : 'Monthly',
         salary: String(row['Salary'] || '0').trim(),
         status: String(row['Status'] || 'Active').toLowerCase().includes('resign') ? 'Resigned' : 'Active'
       }));
 
-      if (importedEmployees.length > 0) {
-        setEmployees(prev => [...prev, ...importedEmployees.filter(e => !prev.some(x => x.machineId === e.machineId))]);
-        alert('Employees Imported Successfully!');
+      if (importedEmployeesPayload.length > 0) {
+        const { error } = await supabase.from('employees').insert(importedEmployeesPayload);
+        if (error) {
+          alert('Error importing Excel: ' + error.message);
+        } else {
+          alert('Employees Imported & Saved to Supabase Successfully!');
+          await fetchEmployees();
+        }
       }
     };
     reader.readAsBinaryString(file);
@@ -484,337 +508,306 @@ export default function SalarySystem() {
 
           <main className="min-w-0 flex-1">
 
-        {/* TAB 1: EMPLOYEES */}
-        {activeTab === 'employees' && (
-          <div className="space-y-6">
-            <form onSubmit={saveEmployee} className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-4">
-              <div className="flex items-center space-x-2">
-                <UserPlus className="text-indigo-400" size={18} />
-                <div>
-                  <h2 className="text-xs font-bold text-white uppercase tracking-wider">{editingEmployeeId === null ? 'Add Employee Manually' : 'Update Employee'}</h2>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{editingEmployeeId === null ? 'Enter employee details and add them to the directory.' : 'Update employee details and status.'}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                <input required value={newEmployee.machineId} onChange={(e) => setNewEmployee({ ...newEmployee, machineId: e.target.value })} placeholder="Machine Code *" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input required value={newEmployee.name} onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })} placeholder="Employee Name *" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input value={newEmployee.designation} onChange={(e) => setNewEmployee({ ...newEmployee, designation: e.target.value })} placeholder="Designation" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input value={newEmployee.dept} onChange={(e) => setNewEmployee({ ...newEmployee, dept: e.target.value })} placeholder="Department" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <input value={newEmployee.mobile} onChange={(e) => setNewEmployee({ ...newEmployee, mobile: e.target.value })} placeholder="Mobile Number" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <select value={newEmployee.salaryType} onChange={(e) => setNewEmployee({ ...newEmployee, salaryType: e.target.value as Employee['salaryType'] })} className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
-                  <option value="Monthly">Monthly Salary</option>
-                  <option value="Weekly">Weekly Salary</option>
-                </select>
-                <input required type="number" min="0" value={newEmployee.salary} onChange={(e) => setNewEmployee({ ...newEmployee, salary: e.target.value })} placeholder="Basic Salary *" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white placeholder:text-slate-500" />
-                <select value={newEmployee.status} onChange={(e) => setNewEmployee({ ...newEmployee, status: e.target.value as Employee['status'] })} className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white">
-                  <option value="Active">Active</option>
-                  <option value="Resigned">Resigned</option>
-                </select>
-                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg p-2.5 font-semibold flex items-center justify-center space-x-2 transition-colors">
-                  {editingEmployeeId === null ? <UserPlus size={14} /> : <Save size={14} />}<span>{editingEmployeeId === null ? 'Add Employee' : 'Update Employee'}</span>
-                </button>
-                {editingEmployeeId !== null && <button type="button" onClick={resetEmployeeForm} className="bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg p-2.5 font-semibold transition-colors">Cancel</button>}
-              </div>
-            </form>
-
-            <div className="bg-slate-800/40 border border-dashed border-slate-700 p-5 rounded-2xl flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <FileSpreadsheet className="text-emerald-400" size={20} />
-                <div>
-                  <h3 className="text-xs font-semibold text-white">Import Employee List</h3>
-                  <p className="text-[11px] text-slate-400">Supported formats: .xlsx, .csv</p>
-                </div>
-              </div>
-              <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 px-4 py-2 rounded-xl text-xs font-medium transition-all">
-                <span>Browse File</span>
-                <input type="file" accept=".xlsx, .xls, .csv" onChange={handleExcelEmployeeUpload} className="hidden" />
-              </label>
-            </div>
-
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-slate-700/60 bg-slate-800/80">
-                <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Employee Directory ({employees.length})</h2>
-              </div>
-              <table className="w-full text-left text-xs whitespace-nowrap">
-                <thead>
-                  <tr className="bg-slate-900/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-700/60">
-                    <th className="p-4">Machine Code</th>
-                    <th className="p-4">Name</th>
-                    <th className="p-4">Designation</th>
-                    <th className="p-4">Department</th>
-                    <th className="p-4">Basic Salary</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/40 text-slate-300">
-                  {employees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-slate-700/30 transition-colors">
-                      <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machineId}</td>
-                      <td className="p-4 font-medium text-white">{emp.name}</td>
-                      <td className="p-4 text-slate-400">{emp.designation}</td>
-                      <td className="p-4 text-slate-400">{emp.dept}</td>
-                      <td className="p-4 font-semibold text-emerald-400">Rs. {Number(emp.salary).toLocaleString()}</td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${emp.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                          {emp.status}
-                        </span>
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex justify-center items-center space-x-2">
-                          <button onClick={() => editEmployee(emp)} title="Edit employee" className="text-slate-500 hover:text-indigo-400 transition-colors p-1"><Pencil size={15} /></button>
-                          <button onClick={() => setEmployees(employees.filter(e => e.id !== emp.id))} title="Delete employee" className="text-slate-500 hover:text-rose-400 transition-colors p-1"><Trash2 size={15} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: MACHINE ATTENDANCE LOG */}
-        {activeTab === 'attendance' && (
-          <div className="space-y-6">
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              
-              {/* Config Panel */}
-              <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl space-y-4 md:col-span-1">
-                <div className="flex items-center space-x-2 text-indigo-400 font-semibold text-xs">
-                  <Settings size={16} />
-                  <h3>Shift Configuration</h3>
-                </div>
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <label className="text-slate-400 block mb-1">Shift Start Time</label>
-                    <input type="time" value={shiftStartTime} onChange={(e) => setShiftStartTime(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono" />
+            {/* TAB 1: EMPLOYEES */}
+            {activeTab === 'employees' && (
+              <div className="space-y-6">
+                <form onSubmit={saveEmployee} className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <UserPlus className="text-indigo-400" size={18} />
+                      <div>
+                        <h2 className="text-xs font-bold text-white uppercase tracking-wider">{editingEmployeeId === null ? 'Add Employee Manually' : 'Update Employee'}</h2>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{editingEmployeeId === null ? 'Enter employee details and add them to the directory.' : 'Update employee details and status.'}</p>
+                      </div>
+                    </div>
+                    
+                    <label className="cursor-pointer inline-flex items-center space-x-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-600 transition-colors">
+                      <Upload size={14} />
+                      <span>Import Excel</span>
+                      <input type="file" accept=".xlsx, .xls" onChange={handleExcelEmployeeUpload} className="hidden" />
+                    </label>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Machine Code *</label>
+                      <input type="text" value={newEmployee.machineId} onChange={e => setNewEmployee({...newEmployee, machineId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. 1001" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Full Name *</label>
+                      <input type="text" value={newEmployee.name} onChange={e => setNewEmployee({...newEmployee, name: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Muhammad Ali" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Designation</label>
+                      <input type="text" value={newEmployee.designation} onChange={e => setNewEmployee({...newEmployee, designation: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Operator" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Department</label>
+                      <input type="text" value={newEmployee.dept} onChange={e => setNewEmployee({...newEmployee, dept: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Stitching" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Mobile No.</label>
+                      <input type="text" value={newEmployee.mobile} onChange={e => setNewEmployee({...newEmployee, mobile: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="03001234567" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Salary Type</label>
+                      <select value={newEmployee.salaryType} onChange={e => setNewEmployee({...newEmployee, salaryType: e.target.value as Employee['salaryType']})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                        <option value="Monthly">Monthly</option>
+                        <option value="Weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Salary (PKR) *</label>
+                      <input type="number" value={newEmployee.salary} onChange={e => setNewEmployee({...newEmployee, salary: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="50000" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 mb-1">Status</label>
+                      <select value={newEmployee.status} onChange={e => setNewEmployee({...newEmployee, status: e.target.value as Employee['status']})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500">
+                        <option value="Active">Active</option>
+                        <option value="Resigned">Resigned</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end space-x-2 pt-2">
+                    {editingEmployeeId !== null && (
+                      <button type="button" onClick={resetEmployeeForm} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold transition-colors">
+                        Cancel
+                      </button>
+                    )}
+                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-xs font-semibold shadow-md transition-colors flex items-center space-x-1.5">
+                      <Save size={14} />
+                      <span>{editingEmployeeId === null ? 'Save Employee' : 'Update Employee'}</span>
+                    </button>
+                  </div>
+                </form>
+
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Employee Directory</h3>
+                  {loading ? (
+                    <div className="text-center py-6 text-slate-400 text-xs">Loading employees from Supabase...</div>
+                  ) : employees.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 text-xs">No employees found. Add manually or import via Excel.</div>
+                  ) : (
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
+                        <tr>
+                          <th className="p-2.5">Code</th>
+                          <th className="p-2.5">Name</th>
+                          <th className="p-2.5">Designation</th>
+                          <th className="p-2.5">Dept</th>
+                          <th className="p-2.5">Mobile</th>
+                          <th className="p-2.5">Type</th>
+                          <th className="p-2.5">Salary</th>
+                          <th className="p-2.5">Status</th>
+                          <th className="p-2.5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/50">
+                        {employees.map((emp) => (
+                          <tr key={emp.id} className="hover:bg-slate-700/30">
+                            <td className="p-2.5 font-semibold text-indigo-400">{emp.machineId}</td>
+                            <td className="p-2.5 font-medium text-white">{emp.name}</td>
+                            <td className="p-2.5">{emp.designation || '-'}</td>
+                            <td className="p-2.5">{emp.dept}</td>
+                            <td className="p-2.5">{emp.mobile || '-'}</td>
+                            <td className="p-2.5">{emp.salaryType}</td>
+                            <td className="p-2.5 font-semibold">Rs. {parseInt(emp.salary || '0').toLocaleString()}</td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold ${emp.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                                {emp.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right">
+                              <button onClick={() => editEmployee(emp)} className="text-slate-400 hover:text-indigo-400 p-1 rounded transition-colors" title="Edit Employee">
+                                <Pencil size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: ATTENDANCE LOG */}
+            {activeTab === 'attendance' && (
+              <div className="space-y-6">
+                <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <div>
-                    <label className="text-slate-400 block mb-1">Late Grace Allowance (Mins)</label>
-                    <input type="number" value={gracePeriodMinutes} onChange={(e) => setGracePeriodMinutes(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono" />
+                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">Biometric Logs & Shift Rules</h2>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Upload text logs from biometric device or manage shift timings.</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg">
+                      <Settings size={14} className="text-slate-400" />
+                      <span className="text-slate-400">Shift Start:</span>
+                      <input type="time" value={shiftStartTime} onChange={e => setShiftStartTime(e.target.value)} className="bg-transparent text-white font-semibold focus:outline-none" />
+                    </div>
+
+                    <label className="cursor-pointer inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg font-semibold shadow-md transition-colors">
+                      <Upload size={14} />
+                      <span>Upload Biometric Log (.txt)</span>
+                      <input type="file" accept=".txt" onChange={handleRawBiometricUpload} className="hidden" />
+                    </label>
                   </div>
                 </div>
-              </div>
 
-              {/* Upload Card */}
-              <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl space-y-3 md:col-span-2 flex flex-col justify-center items-center text-center">
-                <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-full mb-1">
-                  <Upload size={22} />
-                </div>
-                <div>
-                  <h3 className="text-xs font-semibold text-white">Upload Biometric Raw Logs</h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Select standard machine file (.txt, .dat, .csv)</p>
-                </div>
-                <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-xs font-semibold transition-all shadow-lg shadow-indigo-600/20">
-                  <span>Select Log File</span>
-                  <input type="file" accept=".txt, .dat, .csv" onChange={handleRawBiometricUpload} className="hidden" />
-                </label>
-              </div>
-
-            </div>
-
-            {/* Attendance Overview Table */}
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-slate-700/60 bg-slate-800/80">
-                <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Detected Punch Records ({selectedMonth})</h2>
-              </div>
-              <table className="w-full text-left text-xs whitespace-nowrap">
-                <thead>
-                  <tr className="bg-slate-900/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-700/60">
-                    <th className="p-4">Code</th>
-                    <th className="p-4">Name</th>
-                    <th className="p-4">Summary (P / L / H)</th>
-                    <th className="p-4">Late Count</th>
-                    <th className="p-4">Overtime</th>
-                    <th className="p-4 text-center">Detail Log</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/40 text-slate-300">
-                  {employees.map((emp) => {
-                    const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machineId] || {};
-                    const presentCount = Object.values(empAtt).filter(a => a.status === 'P').length;
-                    const leaveCount = Object.values(empAtt).filter(a => a.status === 'L').length;
-                    const holidayCount = Object.values(empAtt).filter(a => a.status === 'H').length;
-                    const lateDaysCount = Object.values(empAtt).filter(a => a.lateMinutes > 0).length;
-                    const otHours = Object.values(empAtt).reduce((s, a) => s + (Number(a.overtimeHours) || 0), 0);
-
-                    return (
-                      <tr key={emp.id} className="hover:bg-slate-700/30 transition-colors">
-                        <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machineId}</td>
-                        <td className="p-4 font-medium text-white">{emp.name}</td>
-                        <td className="p-4 font-semibold space-x-1.5">
-                          <span className="text-emerald-400">{presentCount} P</span>
-                          <span className="text-slate-600">•</span>
-                          <span className="text-blue-400">{leaveCount} L</span>
-                          <span className="text-slate-600">•</span>
-                          <span className="text-purple-400">{holidayCount} H</span>
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-md ${lateDaysCount > 0 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-700/40 text-slate-400'}`}>
-                            {lateDaysCount} Late Days
-                          </span>
-                        </td>
-                        <td className="p-4 text-slate-300 font-mono">{otHours.toFixed(1)} hrs</td>
-                        <td className="p-4 text-center">
-                          <button 
-                            onClick={() => openEmpCalendar(emp)}
-                            className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 mx-auto transition-colors"
-                          >
-                            <span>Punch Times</span>
-                            <ChevronRight size={13} />
-                          </button>
-                        </td>
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Attendance Dashboard ({selectedMonth})</h3>
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
+                      <tr>
+                        <th className="p-2.5">Code</th>
+                        <th className="p-2.5">Name</th>
+                        <th className="p-2.5">Dept</th>
+                        <th className="p-2.5 text-center">Calendar / Edit</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: PAYROLL */}
-        {activeTab === 'payroll' && (
-          <div className="space-y-6">
-            <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl flex justify-between items-center shadow-xl">
-              <div>
-                <h2 className="text-xs font-bold text-white uppercase tracking-wider">Monthly Payroll Summary</h2>
-                <p className="text-[11px] text-slate-400 mt-0.5">Calculated net payout for <span className="text-indigo-400 font-semibold">{selectedMonth}</span></p>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {employees.filter(e => e.status === 'Active').map((emp) => (
+                        <tr key={emp.id} className="hover:bg-slate-700/30">
+                          <td className="p-2.5 font-semibold text-indigo-400">{emp.machineId}</td>
+                          <td className="p-2.5 font-medium text-white">{emp.name}</td>
+                          <td className="p-2.5">{emp.dept}</td>
+                          <td className="p-2.5 text-center">
+                            <button onClick={() => openEmpCalendar(emp)} className="bg-slate-700 hover:bg-slate-600 text-indigo-300 border border-slate-600 px-3 py-1 rounded-lg text-xs font-medium transition-colors">
+                              View / Edit Attendance
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <button onClick={exportPDF} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl flex items-center space-x-2 transition-all shadow-lg shadow-emerald-600/20">
-                <Download size={14} /><span>Export PDF</span>
-              </button>
-            </div>
+            )}
 
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden shadow-xl">
-              <table className="w-full text-left text-xs whitespace-nowrap">
-                <thead>
-                  <tr className="bg-slate-900/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-700/60">
-                    <th className="p-4">Code</th>
-                    <th className="p-4">Name</th>
-                    <th className="p-4">Basic</th>
-                    <th className="p-4">Attd (P/L/H/A)</th>
-                    <th className="p-4">Deductions</th>
-                    <th className="p-4">Net Salary</th>
-                    <th className="p-4 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/40 text-slate-300">
-                  {getPayrollSummary().map((item) => (
-                    <tr key={item.machineId} className="hover:bg-slate-700/30 transition-colors">
-                      <td className="p-4 font-mono font-semibold text-indigo-400">{item.machineId}</td>
-                      <td className="p-4 font-medium text-white">{item.name}</td>
-                      <td className="p-4 text-slate-400">Rs. {item.basicSalary.toLocaleString()}</td>
-                      <td className="p-4 font-semibold space-x-1">
-                        <span className="text-emerald-400">{item.totalPresentDays}P</span> / 
-                        <span className="text-blue-400 ml-1">{item.totalLeaves}L</span> / 
-                        <span className="text-purple-400 ml-1">{item.totalHolidays}H</span> / 
-                        <span className="text-rose-400 ml-1">{item.totalAbsentDays}A</span>
-                      </td>
-                      <td className="p-4 text-rose-400 font-mono">Rs. {Math.round(item.deduction).toLocaleString()}</td>
-                      <td className="p-4 font-bold text-emerald-400 font-mono">Rs. {Math.round(item.netSalary).toLocaleString()}</td>
-                      <td className="p-4 text-center">
-                        <button 
-                          onClick={() => togglePaidStatus(item.machineId)}
-                          className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all flex items-center space-x-1 mx-auto ${item.isPaid ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}
-                        >
-                          {item.isPaid ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}
-                          <span>{item.isPaid ? 'PAID' : 'UNPAID'}</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+            {/* TAB 3: PAYROLL */}
+            {activeTab === 'payroll' && (
+              <div className="space-y-6">
+                <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">Payroll Report</h2>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Calculated net salaries based on monthly attendance.</p>
+                  </div>
+
+                  <button onClick={exportPDF} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center space-x-1.5 transition-colors">
+                    <Download size={14} />
+                    <span>Export PDF Report</span>
+                  </button>
+                </div>
+
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
+                      <tr>
+                        <th className="p-2.5">Code</th>
+                        <th className="p-2.5">Name</th>
+                        <th className="p-2.5">Basic</th>
+                        <th className="p-2.5">P / L / H</th>
+                        <th className="p-2.5">Late Days</th>
+                        <th className="p-2.5">Deduction</th>
+                        <th className="p-2.5">Net Salary</th>
+                        <th className="p-2.5 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {getPayrollSummary().map((item) => (
+                        <tr key={item.machineId} className="hover:bg-slate-700/30">
+                          <td className="p-2.5 font-semibold text-indigo-400">{item.machineId}</td>
+                          <td className="p-2.5 font-medium text-white">{item.name}</td>
+                          <td className="p-2.5">Rs. {item.basicSalary.toLocaleString()}</td>
+                          <td className="p-2.5">{item.totalPresentDays}P / {item.totalLeaves}L / {item.totalHolidays}H</td>
+                          <td className="p-2.5">{item.totalLateCount} Days</td>
+                          <td className="p-2.5 text-rose-400 font-medium">Rs. {Math.round(item.deduction).toLocaleString()}</td>
+                          <td className="p-2.5 text-emerald-400 font-bold">Rs. {Math.round(item.netSalary).toLocaleString()}</td>
+                          <td className="p-2.5 text-center">
+                            <button onClick={() => togglePaidStatus(item.machineId)} className={`px-2.5 py-1 text-[10px] rounded-full font-bold transition-all ${item.isPaid ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
+                              {item.isPaid ? 'PAID' : 'UNPAID'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
           </main>
         </div>
       </div>
 
-      {/* MODAL */}
+      {/* ATTENDANCE EDIT MODAL */}
       {selectedEmpForEdit && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b border-slate-700 pb-3">
               <div>
-                <h3 className="font-bold text-white text-xs">{selectedEmpForEdit.name} - Punch Logs</h3>
-                <p className="text-[11px] text-slate-400 font-mono">Code: {selectedEmpForEdit.machineId} | Month: {selectedMonth}</p>
+                <h3 className="text-sm font-bold text-white">Monthly Attendance Modal - {selectedEmpForEdit.name} ({selectedEmpForEdit.machineId})</h3>
+                <p className="text-[11px] text-slate-400">Month: {selectedMonth}</p>
               </div>
-              <button onClick={() => setSelectedEmpForEdit(null)} className="text-slate-400 hover:text-white p-1 rounded-lg"><X size={16} /></button>
+              <button onClick={() => setSelectedEmpForEdit(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-2">
-              <div className="grid grid-cols-6 font-bold text-[10px] text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2 gap-2">
-                <span>Date</span>
-                <span>Punch IN</span>
-                <span>Punch OUT</span>
-                <span>Status</span>
-                <span>Arrival</span>
-                <span>Notes</span>
-              </div>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {Object.keys(tempEmpAttendance).sort().map((dateKey) => {
-                const rec = tempEmpAttendance[dateKey];
-                const [y, m, d] = dateKey.split('-').map(Number);
-                const dateObj = new Date(y, m - 1, d);
-                const isSunday = dateObj.getDay() === 0;
-
+                const punch = tempEmpAttendance[dateKey];
                 return (
-                  <div key={dateKey} className={`grid grid-cols-6 items-center text-xs border-b border-slate-800/60 pb-2 gap-2 ${isSunday ? 'bg-purple-500/5 p-1 rounded-lg' : ''}`}>
-                    <span className="font-mono text-slate-300 font-medium text-[11px]">{dateKey}</span>
+                  <div key={dateKey} className="flex items-center justify-between bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50 text-xs">
+                    <span className="font-medium text-slate-300 w-24">{dateKey}</span>
+                    <div className="flex items-center space-x-2">
+                      <select 
+                        value={punch.status} 
+                        onChange={(e) => setTempEmpAttendance({
+                          ...tempEmpAttendance,
+                          [dateKey]: { ...punch, status: e.target.value as DailyPunch['status'] }
+                        })}
+                        className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1 focus:outline-none"
+                      >
+                        <option value="P">Present (P)</option>
+                        <option value="A">Absent (A)</option>
+                        <option value="L">Leave (L)</option>
+                        <option value="H">Holiday (H)</option>
+                      </select>
+                      
+                      <input 
+                        type="time" 
+                        value={punch.inTime !== '--:--' ? punch.inTime : ''} 
+                        onChange={(e) => setTempEmpAttendance({
+                          ...tempEmpAttendance,
+                          [dateKey]: { ...punch, inTime: e.target.value || '--:--' }
+                        })}
+                        className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1 focus:outline-none" 
+                      />
 
-                    <span className="font-mono text-[11px] bg-slate-800/80 p-1 rounded text-center text-indigo-300 border border-slate-700/50">
-                      {format12Hour(rec.inTime)}
-                    </span>
-                    <span className="font-mono text-[11px] bg-slate-800/80 p-1 rounded text-center text-slate-300 border border-slate-700/50">
-                      {format12Hour(rec.outTime)}
-                    </span>
-
-                    <select 
-                      value={rec.status} 
-                      onChange={(e) => setTempEmpAttendance({
-                        ...tempEmpAttendance,
-                        [dateKey]: { ...rec, status: e.target.value as DailyPunch['status'] }
-                      })}
-                      className="p-1 bg-slate-800 border border-slate-700 rounded text-xs text-white focus:outline-none"
-                    >
-                      <option value="P">Present (P)</option>
-                      <option value="A">Absent (A)</option>
-                      <option value="L">Leave (L)</option>
-                      <option value="H">Holiday (H)</option>
-                    </select>
-
-                    <div>
-                      {rec.lateMinutes > 0 ? (
-                        <span className="text-amber-400 text-[10px] font-semibold">{rec.lateMinutes}m Late</span>
-                      ) : (
-                        <span className="text-emerald-400 text-[10px] font-semibold">On Time</span>
-                      )}
+                      <input 
+                        type="time" 
+                        value={punch.outTime !== '--:--' ? punch.outTime : ''} 
+                        onChange={(e) => setTempEmpAttendance({
+                          ...tempEmpAttendance,
+                          [dateKey]: { ...punch, outTime: e.target.value || '--:--' }
+                        })}
+                        className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1 focus:outline-none" 
+                      />
                     </div>
-
-                    <input 
-                      type="text" 
-                      value={rec.note || ''} 
-                      onChange={(e) => setTempEmpAttendance({
-                        ...tempEmpAttendance,
-                        [dateKey]: { ...rec, note: e.target.value }
-                      })}
-                      className="p-1 bg-slate-800 border border-slate-700 rounded text-xs text-white" 
-                      placeholder="Note"
-                    />
                   </div>
                 );
               })}
             </div>
 
-            <div className="p-3 border-t border-slate-800 bg-slate-800/30 flex justify-end space-x-2">
-              <button onClick={() => setSelectedEmpForEdit(null)} className="px-3 py-1.5 border border-slate-700 rounded-lg text-xs text-slate-300 hover:bg-slate-800">Cancel</button>
-              <button onClick={saveEmpAttendance} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-500 flex items-center space-x-1">
-                <Save size={13} /><span>Save</span>
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-700">
+              <button onClick={() => setSelectedEmpForEdit(null)} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-1.5 rounded-lg text-xs font-semibold">
+                Cancel
+              </button>
+              <button onClick={saveEmpAttendance} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-md">
+                Save Changes
               </button>
             </div>
           </div>
