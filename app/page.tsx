@@ -238,6 +238,42 @@ export default function SalarySystem() {
     return 0;
   };
 
+  const normalizeAttendanceRecord = (record: DailyPunch): DailyPunch => {
+    const inMinutes = record.inTime && record.inTime !== '--:--'
+      ? record.inTime.split(':').map(Number).reduce((total, value, index) => total + (index === 0 ? value * 60 : value), 0)
+      : -1;
+    const outMinutes = record.outTime && record.outTime !== '--:--'
+      ? record.outTime.split(':').map(Number).reduce((total, value, index) => total + (index === 0 ? value * 60 : value), 0)
+      : -1;
+
+    const isManualLeaveOrHoliday = record.status === 'L' || record.status === 'H';
+
+    if (record.inTime && record.inTime !== '--:--' && inMinutes >= 0) {
+      const lateMinutes = calculateLateMinutes(record.inTime);
+      const totalHours = outMinutes > inMinutes
+        ? Math.max(0, Number(((outMinutes - inMinutes) / 60).toFixed(2)))
+        : 0;
+
+      return {
+        ...record,
+        lateMinutes,
+        totalHours,
+        overtimeHours: totalHours > 8 ? Number((totalHours - 8).toFixed(1)) : 0,
+        status: isManualLeaveOrHoliday ? record.status : 'P',
+        note: record.note || (lateMinutes > 0 ? `Late ${lateMinutes}m` : '')
+      };
+    }
+
+    return {
+      ...record,
+      lateMinutes: 0,
+      totalHours: 0,
+      overtimeHours: 0,
+      status: isManualLeaveOrHoliday ? record.status : 'A',
+      note: record.note || ''
+    };
+  };
+
   const handleRawBiometricUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -445,7 +481,7 @@ export default function SalarySystem() {
     setLoading(true);
 
     const dbRows = Object.keys(tempEmpAttendance).map(dateKey => {
-      const rec = tempEmpAttendance[dateKey];
+      const rec = normalizeAttendanceRecord(tempEmpAttendance[dateKey]);
       return {
         machine_id: selectedEmpForEdit.machine_id,
         punch_date: dateKey,
@@ -921,19 +957,33 @@ export default function SalarySystem() {
                     <input
                       type="time"
                       value={rec.inTime && rec.inTime !== '--:--' ? rec.inTime : ''}
-                      onChange={(e) => setTempEmpAttendance({
-                        ...tempEmpAttendance,
-                        [dateKey]: { ...rec, inTime: e.target.value || '--:--' }
-                      })}
+                      onChange={(e) => {
+                        const updated = normalizeAttendanceRecord({
+                          ...rec,
+                          inTime: e.target.value || '--:--'
+                        });
+
+                        setTempEmpAttendance({
+                          ...tempEmpAttendance,
+                          [dateKey]: updated
+                        });
+                      }}
                       className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-indigo-300 border border-slate-800 focus:outline-none"
                     />
                     <input
                       type="time"
                       value={rec.outTime && rec.outTime !== '--:--' ? rec.outTime : ''}
-                      onChange={(e) => setTempEmpAttendance({
-                        ...tempEmpAttendance,
-                        [dateKey]: { ...rec, outTime: e.target.value || '--:--' }
-                      })}
+                      onChange={(e) => {
+                        const updated = normalizeAttendanceRecord({
+                          ...rec,
+                          outTime: e.target.value || '--:--'
+                        });
+
+                        setTempEmpAttendance({
+                          ...tempEmpAttendance,
+                          [dateKey]: updated
+                        });
+                      }}
                       className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-slate-300 border border-slate-800 focus:outline-none"
                     />
 
