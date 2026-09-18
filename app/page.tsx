@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 import { 
   Users, Clock, DollarSign, Download, Trash2, 
-  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, Clock3, RefreshCw
+  Calendar, Save, X, Upload, FileSpreadsheet, Settings, Cpu, ChevronRight, CheckCircle2, Clock3, RefreshCw, UserPlus, Edit3
 } from 'lucide-react';
 
 interface Employee {
@@ -38,7 +38,7 @@ interface MonthlyData {
 }
 
 export default function SalarySystem() {
-  const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('attendance');
+  const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('employees');
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -50,15 +50,23 @@ export default function SalarySystem() {
     '2026-09': { attendance: {}, paidStatus: {} }
   });
 
+  // Manual Employee Form States
+  const [formMachineId, setFormMachineId] = useState<string>('');
+  const [formName, setFormName] = useState<string>('');
+  const [formDesignation, setFormDesignation] = useState<string>('');
+  const [formDept, setFormDept] = useState<string>('Production');
+  const [formMobile, setFormMobile] = useState<string>('');
+  const [formSalaryType, setFormSalaryType] = useState<'Monthly' | 'Weekly'>('Monthly');
+  const [formSalary, setFormSalary] = useState<string>('');
+  const [formStatus, setFormStatus] = useState<'Active' | 'Resigned'>('Active');
+
   const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
   const [tempEmpAttendance, setTempEmpAttendance] = useState<{ [date: string]: DailyPunch }>({});
   const [totalWorkingDays] = useState<number>(30);
 
-  // Fetch Employees & Attendance from Supabase
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch Employees
       const { data: empData, error: empError } = await supabase
         .from('employees')
         .select('*')
@@ -67,7 +75,6 @@ export default function SalarySystem() {
       if (empError) console.error('Error fetching employees:', empError);
       else if (empData) setEmployees(empData);
 
-      // 2. Fetch Attendance
       const { data: attData, error: attError } = await supabase
         .from('attendance_logs')
         .select('*');
@@ -110,6 +117,44 @@ export default function SalarySystem() {
     fetchData();
   }, [selectedMonth]);
 
+  // Handle Manual Employee Submit
+  const handleAddEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formMachineId || !formName || !formSalary) {
+      alert('Please fill Machine Code, Name, and Basic Salary!');
+      return;
+    }
+
+    setLoading(true);
+    const newEmp = {
+      machine_id: formMachineId.trim(),
+      name: formName.trim(),
+      designation: formDesignation.trim(),
+      dept: formDept.trim(),
+      mobile: formMobile.trim(),
+      salary_type: formSalaryType,
+      salary: formSalary,
+      status: formStatus
+    };
+
+    const { error } = await supabase
+      .from('employees')
+      .upsert([newEmp], { onConflict: 'machine_id' });
+
+    if (error) {
+      alert('Error adding employee: ' + error.message);
+    } else {
+      alert('Employee Added Successfully!');
+      setFormMachineId('');
+      setFormName('');
+      setFormDesignation('');
+      setFormMobile('');
+      setFormSalary('');
+      fetchData();
+    }
+    setLoading(false);
+  };
+
   const format12Hour = (time24: string) => {
     if (!time24 || time24 === '--:--') return '--:--';
     const parts = time24.split(':');
@@ -125,7 +170,6 @@ export default function SalarySystem() {
     if (!inTime24 || inTime24 === '--:--') return 0;
     const [inH, inM] = inTime24.split(':').map(Number);
     const inTotalMins = inH * 60 + inM;
-
     const [startH, startM] = shiftStartTime.split(':').map(Number);
     const expectedMins = startH * 60 + startM;
 
@@ -174,7 +218,6 @@ export default function SalarySystem() {
       });
 
       const dbRows: any[] = [];
-
       Object.keys(punchLogs).forEach((mId) => {
         Object.keys(punchLogs[mId]).forEach((dateStr) => {
           const times = punchLogs[mId][dateStr].sort();
@@ -211,16 +254,14 @@ export default function SalarySystem() {
           .from('attendance_logs')
           .upsert(dbRows, { onConflict: 'machine_id,punch_date' });
 
-        if (error) {
-          alert('Error saving logs to Supabase: ' + error.message);
-        } else {
-          alert('Biometric Logs Saved to Supabase Database!');
+        if (error) alert('Error saving logs: ' + error.message);
+        else {
+          alert('Biometric Logs Saved to Supabase!');
           fetchData();
         }
         setLoading(false);
       }
     };
-
     reader.readAsText(file);
     e.target.value = '';
   };
@@ -255,9 +296,8 @@ export default function SalarySystem() {
           .from('employees')
           .upsert(importedEmployees, { onConflict: 'machine_id' });
 
-        if (error) {
-          alert('Error inserting employees: ' + error.message);
-        } else {
+        if (error) alert('Error: ' + error.message);
+        else {
           alert('Employees Synced with Database!');
           fetchData();
         }
@@ -280,15 +320,13 @@ export default function SalarySystem() {
   const openEmpCalendar = (emp: Employee) => {
     setSelectedEmpForEdit(emp);
     const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machine_id] || {};
-    
     const [year, month] = selectedMonth.split('-').map(Number);
-    const daysInMonth = new Date(year, month - 1, dayCount(year, month)).getDate();
+    const daysInMonth = new Date(year, month, 0).getDate();
     
     const fullMonthDates: { [date: string]: DailyPunch } = {};
     for (let day = 1; day <= daysInMonth; day++) {
       const dateObj = new Date(year, month - 1, day);
       const isSunday = dateObj.getDay() === 0;
-
       const dateKey = `${selectedMonth}-${String(day).padStart(2, '0')}`;
       const existing = empAtt[dateKey];
 
@@ -307,11 +345,8 @@ export default function SalarySystem() {
         };
       }
     }
-
     setTempEmpAttendance(fullMonthDates);
   };
-
-  const dayCount = (y: number, m: number) => new Date(y, m, 0).getDate();
 
   const saveEmpAttendance = async () => {
     if (!selectedEmpForEdit) return;
@@ -336,7 +371,7 @@ export default function SalarySystem() {
       .from('attendance_logs')
       .upsert(dbRows, { onConflict: 'machine_id,punch_date' });
 
-    if (error) alert('Error saving attendance: ' + error.message);
+    if (error) alert('Error: ' + error.message);
     else {
       alert('Attendance Updated in Database!');
       fetchData();
@@ -400,7 +435,6 @@ export default function SalarySystem() {
     const doc = new jsPDF();
     doc.setFontSize(16);
     doc.text(`Payroll Report - ${selectedMonth}`, 14, 15);
-
     const summary = getPayrollSummary();
     const tableRows = summary.map((item) => [
       item.machineId,
@@ -421,18 +455,17 @@ export default function SalarySystem() {
       theme: 'grid',
       headStyles: { fillColor: [15, 23, 42] }
     });
-
     doc.save(`Payroll_${selectedMonth}.pdf`);
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans antialiased">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans antialiased">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Top Bar Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/80 backdrop-blur border border-slate-700/60 p-5 rounded-2xl gap-4 shadow-xl">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-900/80 backdrop-blur border border-slate-800 p-5 rounded-2xl gap-4 shadow-xl">
           <div className="flex items-center space-x-3.5">
-            <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-blue-500 text-white rounded-xl shadow-inner">
+            <div className="p-2.5 bg-gradient-to-tr from-indigo-600 to-blue-500 text-white rounded-xl shadow-inner">
               <Cpu size={24} />
             </div>
             <div>
@@ -440,13 +473,13 @@ export default function SalarySystem() {
                 Attendance & Payroll System
                 {loading && <RefreshCw size={14} className="animate-spin text-indigo-400" />}
               </h1>
-              <p className="text-xs text-slate-400">Connected to Supabase Database</p>
+              <p className="text-xs text-slate-400">Automated Machine Time Detection Engine</p>
             </div>
           </div>
           
-          <div className="flex items-center space-x-3 bg-slate-900/60 px-3.5 py-1.5 rounded-xl border border-slate-700/80">
+          <div className="flex items-center space-x-3 bg-slate-950/60 px-3.5 py-2 rounded-xl border border-slate-800">
             <Calendar className="text-indigo-400" size={15} />
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Cycle:</span>
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Salary Month:</span>
             <input 
               type="month" 
               value={selectedMonth} 
@@ -456,13 +489,13 @@ export default function SalarySystem() {
           </div>
         </div>
 
-        {/* Tab Selection */}
-        <div className="flex space-x-1.5 bg-slate-800/60 p-1 rounded-xl border border-slate-700/50 max-w-max">
+        {/* Navigation Sidebar/Tabs */}
+        <div className="flex space-x-1.5 bg-slate-900/60 p-1 rounded-xl border border-slate-800 max-w-max">
           <button onClick={() => setActiveTab('employees')} className={`flex items-center space-x-2 px-4 py-2 text-xs font-medium rounded-lg transition-all ${activeTab === 'employees' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
             <Users size={14} /><span>Employees</span>
           </button>
           <button onClick={() => setActiveTab('attendance')} className={`flex items-center space-x-2 px-4 py-2 text-xs font-medium rounded-lg transition-all ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
-            <Clock size={14} /><span> Attendance Log</span>
+            <Clock size={14} /><span>Attendance Log</span>
           </button>
           <button onClick={() => setActiveTab('payroll')} className={`flex items-center space-x-2 px-4 py-2 text-xs font-medium rounded-lg transition-all ${activeTab === 'payroll' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
             <DollarSign size={14} /><span>Payroll</span>
@@ -472,44 +505,133 @@ export default function SalarySystem() {
         {/* TAB 1: EMPLOYEES */}
         {activeTab === 'employees' && (
           <div className="space-y-6">
-            <div className="bg-slate-800/40 border border-dashed border-slate-700 p-5 rounded-2xl flex items-center justify-between">
+            
+            {/* Add Employee Form */}
+            <form onSubmit={handleAddEmployee} className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <UserPlus size={16} className="text-indigo-400" /> Add Employee Manually
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Enter employee details and add them to the directory.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <input 
+                  type="text" 
+                  placeholder="Machine Code *" 
+                  value={formMachineId} 
+                  onChange={(e) => setFormMachineId(e.target.value)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500 font-mono"
+                  required
+                />
+                <input 
+                  type="text" 
+                  placeholder="Employee Name *" 
+                  value={formName} 
+                  onChange={(e) => setFormName(e.target.value)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500"
+                  required
+                />
+                <input 
+                  type="text" 
+                  placeholder="Designation" 
+                  value={formDesignation} 
+                  onChange={(e) => setFormDesignation(e.target.value)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500"
+                />
+                <input 
+                  type="text" 
+                  placeholder="Department (e.g. Production)" 
+                  value={formDept} 
+                  onChange={(e) => setFormDept(e.target.value)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500"
+                />
+                <input 
+                  type="text" 
+                  placeholder="Mobile Number" 
+                  value={formMobile} 
+                  onChange={(e) => setFormMobile(e.target.value)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500 font-mono"
+                />
+                <select 
+                  value={formSalaryType} 
+                  onChange={(e) => setFormSalaryType(e.target.value as any)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Monthly">Monthly Salary</option>
+                  <option value="Weekly">Weekly Salary</option>
+                </select>
+                <input 
+                  type="number" 
+                  placeholder="Basic Salary *" 
+                  value={formSalary} 
+                  onChange={(e) => setFormSalary(e.target.value)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500 font-mono"
+                  required
+                />
+                <select 
+                  value={formStatus} 
+                  onChange={(e) => setFormStatus(e.target.value as any)} 
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Resigned">Resigned</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition-all shadow-lg shadow-indigo-600/20">
+                  <UserPlus size={14} /><span>Add Employee</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Import Box */}
+            <div className="bg-slate-900/60 border border-dashed border-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-xl">
               <div className="flex items-center space-x-3">
                 <FileSpreadsheet className="text-emerald-400" size={20} />
                 <div>
                   <h3 className="text-xs font-semibold text-white">Import Employee List</h3>
-                  <p className="text-[11px] text-slate-400">Supported formats: .xlsx, .csv (Auto-saves to DB)</p>
+                  <p className="text-[11px] text-slate-400">Supported formats: .xlsx, .csv</p>
                 </div>
               </div>
-              <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 px-4 py-2 rounded-xl text-xs font-medium transition-all">
+              <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 px-4 py-2 rounded-xl text-xs font-medium transition-all">
                 <span>Browse File</span>
                 <input type="file" accept=".xlsx, .xls, .csv" onChange={handleExcelEmployeeUpload} className="hidden" />
               </label>
             </div>
 
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-slate-700/60 bg-slate-800/80">
+            {/* Employee Directory Table */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="p-4 border-b border-slate-800 bg-slate-900/80">
                 <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Employee Directory ({employees.length})</h2>
               </div>
               <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead>
-                  <tr className="bg-slate-900/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-700/60">
+                  <tr className="bg-slate-950/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800">
                     <th className="p-4">Machine Code</th>
                     <th className="p-4">Name</th>
                     <th className="p-4">Designation</th>
                     <th className="p-4">Department</th>
                     <th className="p-4">Basic Salary</th>
+                    <th className="p-4">Status</th>
                     <th className="p-4 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/40 text-slate-300">
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
                   {employees.map((emp) => (
-                    <tr key={emp.machine_id} className="hover:bg-slate-700/30 transition-colors">
+                    <tr key={emp.machine_id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machine_id}</td>
                       <td className="p-4 font-medium text-white">{emp.name}</td>
-                      <td className="p-4 text-slate-400">{emp.designation}</td>
+                      <td className="p-4 text-slate-400">{emp.designation || '--'}</td>
                       <td className="p-4 text-slate-400">{emp.dept}</td>
-                      <td className="p-4 font-semibold text-emerald-400">Rs. {Number(emp.salary).toLocaleString()}</td>
-                      <td className="p-4 text-center">
+                      <td className="p-4 font-semibold text-emerald-400 font-mono">Rs. {Number(emp.salary).toLocaleString()}</td>
+                      <td className="p-4">
+                        <span className="px-2.5 py-1 text-[10px] font-bold rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {emp.status}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center space-x-2">
                         <button onClick={() => deleteEmployee(emp.machine_id)} className="text-slate-500 hover:text-rose-400 transition-colors p-1"><Trash2 size={15} /></button>
                       </td>
                     </tr>
@@ -520,13 +642,11 @@ export default function SalarySystem() {
           </div>
         )}
 
-        {/* TAB 2: MACHINE ATTENDANCE LOG */}
+        {/* TAB 2: ATTENDANCE LOG */}
         {activeTab === 'attendance' && (
           <div className="space-y-6">
-            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              
-              <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl space-y-4 md:col-span-1">
+              <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl space-y-4 md:col-span-1 shadow-xl">
                 <div className="flex items-center space-x-2 text-indigo-400 font-semibold text-xs">
                   <Settings size={16} />
                   <h3>Shift Configuration</h3>
@@ -534,16 +654,16 @@ export default function SalarySystem() {
                 <div className="space-y-3 text-xs">
                   <div>
                     <label className="text-slate-400 block mb-1">Shift Start Time</label>
-                    <input type="time" value={shiftStartTime} onChange={(e) => setShiftStartTime(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono" />
+                    <input type="time" value={shiftStartTime} onChange={(e) => setShiftStartTime(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono" />
                   </div>
                   <div>
                     <label className="text-slate-400 block mb-1">Late Grace Allowance (Mins)</label>
-                    <input type="number" value={gracePeriodMinutes} onChange={(e) => setGracePeriodMinutes(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-mono" />
+                    <input type="number" value={gracePeriodMinutes} onChange={(e) => setGracePeriodMinutes(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl space-y-3 md:col-span-2 flex flex-col justify-center items-center text-center">
+              <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl space-y-3 md:col-span-2 flex flex-col justify-center items-center text-center shadow-xl">
                 <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-full mb-1">
                   <Upload size={22} />
                 </div>
@@ -556,16 +676,15 @@ export default function SalarySystem() {
                   <input type="file" accept=".txt, .dat, .csv" onChange={handleRawBiometricUpload} className="hidden" />
                 </label>
               </div>
-
             </div>
 
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden shadow-xl">
-              <div className="p-4 border-b border-slate-700/60 bg-slate-800/80">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="p-4 border-b border-slate-800 bg-slate-900/80">
                 <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Detected Punch Records ({selectedMonth})</h2>
               </div>
               <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead>
-                  <tr className="bg-slate-900/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-700/60">
+                  <tr className="bg-slate-950/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800">
                     <th className="p-4">Code</th>
                     <th className="p-4">Name</th>
                     <th className="p-4">Summary (P / L / H)</th>
@@ -574,7 +693,7 @@ export default function SalarySystem() {
                     <th className="p-4 text-center">Detail Log</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/40 text-slate-300">
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
                   {employees.map((emp) => {
                     const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machine_id] || {};
                     const presentCount = Object.values(empAtt).filter(a => a.status === 'P').length;
@@ -584,7 +703,7 @@ export default function SalarySystem() {
                     const otHours = Object.values(empAtt).reduce((s, a) => s + (Number(a.overtimeHours) || 0), 0);
 
                     return (
-                      <tr key={emp.machine_id} className="hover:bg-slate-700/30 transition-colors">
+                      <tr key={emp.machine_id} className="hover:bg-slate-800/30 transition-colors">
                         <td className="p-4 font-mono font-semibold text-indigo-400">{emp.machine_id}</td>
                         <td className="p-4 font-medium text-white">{emp.name}</td>
                         <td className="p-4 font-semibold space-x-1.5">
@@ -595,16 +714,13 @@ export default function SalarySystem() {
                           <span className="text-purple-400">{holidayCount} H</span>
                         </td>
                         <td className="p-4">
-                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-md ${lateDaysCount > 0 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-700/40 text-slate-400'}`}>
+                          <span className={`px-2.5 py-1 text-[10px] font-bold rounded-md ${lateDaysCount > 0 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-800 text-slate-400'}`}>
                             {lateDaysCount} Late Days
                           </span>
                         </td>
                         <td className="p-4 text-slate-300 font-mono">{otHours.toFixed(1)} hrs</td>
                         <td className="p-4 text-center">
-                          <button 
-                            onClick={() => openEmpCalendar(emp)}
-                            className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 mx-auto transition-colors"
-                          >
+                          <button onClick={() => openEmpCalendar(emp)} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 mx-auto transition-colors">
                             <span>Punch Times</span>
                             <ChevronRight size={13} />
                           </button>
@@ -621,7 +737,7 @@ export default function SalarySystem() {
         {/* TAB 3: PAYROLL */}
         {activeTab === 'payroll' && (
           <div className="space-y-6">
-            <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl flex justify-between items-center shadow-xl">
+            <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl flex justify-between items-center shadow-xl">
               <div>
                 <h2 className="text-xs font-bold text-white uppercase tracking-wider">Monthly Payroll Summary</h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">Calculated net payout for <span className="text-indigo-400 font-semibold">{selectedMonth}</span></p>
@@ -631,10 +747,10 @@ export default function SalarySystem() {
               </button>
             </div>
 
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden shadow-xl">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
               <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead>
-                  <tr className="bg-slate-900/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-700/60">
+                  <tr className="bg-slate-950/40 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800">
                     <th className="p-4">Code</th>
                     <th className="p-4">Name</th>
                     <th className="p-4">Basic</th>
@@ -644,12 +760,12 @@ export default function SalarySystem() {
                     <th className="p-4 text-center">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/40 text-slate-300">
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
                   {getPayrollSummary().map((item) => (
-                    <tr key={item.machineId} className="hover:bg-slate-700/30 transition-colors">
+                    <tr key={item.machineId} className="hover:bg-slate-800/30 transition-colors">
                       <td className="p-4 font-mono font-semibold text-indigo-400">{item.machineId}</td>
                       <td className="p-4 font-medium text-white">{item.name}</td>
-                      <td className="p-4 text-slate-400">Rs. {item.basicSalary.toLocaleString()}</td>
+                      <td className="p-4 text-slate-400 font-mono">Rs. {item.basicSalary.toLocaleString()}</td>
                       <td className="p-4 font-semibold space-x-1">
                         <span className="text-emerald-400">{item.totalPresentDays}P</span> / 
                         <span className="text-blue-400 ml-1">{item.totalLeaves}L</span> / 
@@ -659,10 +775,7 @@ export default function SalarySystem() {
                       <td className="p-4 text-rose-400 font-mono">Rs. {Math.round(item.deduction).toLocaleString()}</td>
                       <td className="p-4 font-bold text-emerald-400 font-mono">Rs. {Math.round(item.netSalary).toLocaleString()}</td>
                       <td className="p-4 text-center">
-                        <button 
-                          onClick={() => togglePaidStatus(item.machineId)}
-                          className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all flex items-center space-x-1 mx-auto ${item.isPaid ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}
-                        >
+                        <button onClick={() => togglePaidStatus(item.machineId)} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all flex items-center space-x-1 mx-auto ${item.isPaid ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
                           {item.isPaid ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}
                           <span>{item.isPaid ? 'PAID' : 'UNPAID'}</span>
                         </button>
@@ -677,11 +790,11 @@ export default function SalarySystem() {
 
       </div>
 
-      {/* MODAL */}
+      {/* ATTENDANCE CALENDAR MODAL */}
       {selectedEmpForEdit && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/80">
               <div>
                 <h3 className="font-bold text-white text-xs">{selectedEmpForEdit.name} - Punch Logs</h3>
                 <p className="text-[11px] text-slate-400 font-mono">Code: {selectedEmpForEdit.machine_id} | Month: {selectedMonth}</p>
@@ -705,23 +818,15 @@ export default function SalarySystem() {
                 const isSunday = dateObj.getDay() === 0;
 
                 return (
-                  <div key={dateKey} className={`grid grid-cols-6 items-center text-xs border-b border-slate-800/60 pb-2 gap-2 ${isSunday ? 'bg-purple-500/5 p-1 rounded-lg' : ''}`}>
+                  <div key={dateKey} className={`grid grid-cols-6 items-center text-xs border-b border-slate-800/40 pb-2 gap-2 ${isSunday ? 'bg-purple-500/5 p-1 rounded-lg' : ''}`}>
                     <span className="font-mono text-slate-300 font-medium text-[11px]">{dateKey}</span>
-
-                    <span className="font-mono text-[11px] bg-slate-800/80 p-1 rounded text-center text-indigo-300 border border-slate-700/50">
-                      {format12Hour(rec.inTime)}
-                    </span>
-                    <span className="font-mono text-[11px] bg-slate-800/80 p-1 rounded text-center text-slate-300 border border-slate-700/50">
-                      {format12Hour(rec.outTime)}
-                    </span>
+                    <span className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-indigo-300 border border-slate-800">{format12Hour(rec.inTime)}</span>
+                    <span className="font-mono text-[11px] bg-slate-950 p-1 rounded text-center text-slate-300 border border-slate-800">{format12Hour(rec.outTime)}</span>
 
                     <select 
                       value={rec.status} 
-                      onChange={(e) => setTempEmpAttendance({
-                        ...tempEmpAttendance,
-                        [dateKey]: { ...rec, status: e.target.value as any }
-                      })}
-                      className="p-1 bg-slate-800 border border-slate-700 rounded text-xs text-white focus:outline-none"
+                      onChange={(e) => setTempEmpAttendance({ ...tempEmpAttendance, [dateKey]: { ...rec, status: e.target.value as any } })}
+                      className="p-1 bg-slate-950 border border-slate-800 rounded text-xs text-white focus:outline-none"
                     >
                       <option value="P">Present (P)</option>
                       <option value="A">Absent (A)</option>
@@ -740,11 +845,8 @@ export default function SalarySystem() {
                     <input 
                       type="text" 
                       value={rec.note || ''} 
-                      onChange={(e) => setTempEmpAttendance({
-                        ...tempEmpAttendance,
-                        [dateKey]: { ...rec, note: e.target.value }
-                      })}
-                      className="p-1 bg-slate-800 border border-slate-700 rounded text-xs text-white" 
+                      onChange={(e) => setTempEmpAttendance({ ...tempEmpAttendance, [dateKey]: { ...rec, note: e.target.value } })}
+                      className="p-1 bg-slate-950 border border-slate-800 rounded text-xs text-white" 
                       placeholder="Note"
                     />
                   </div>
@@ -752,8 +854,8 @@ export default function SalarySystem() {
               })}
             </div>
 
-            <div className="p-3 border-t border-slate-800 bg-slate-800/30 flex justify-end space-x-2">
-              <button onClick={() => setSelectedEmpForEdit(null)} className="px-3 py-1.5 border border-slate-700 rounded-lg text-xs text-slate-300 hover:bg-slate-800">Cancel</button>
+            <div className="p-3 border-t border-slate-800 bg-slate-900/80 flex justify-end space-x-2">
+              <button onClick={() => setSelectedEmpForEdit(null)} className="px-3 py-1.5 border border-slate-800 rounded-lg text-xs text-slate-300 hover:bg-slate-800">Cancel</button>
               <button onClick={saveEmpAttendance} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-500 flex items-center space-x-1">
                 <Save size={13} /><span>Save to DB</span>
               </button>
