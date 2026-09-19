@@ -47,6 +47,8 @@ export default function SalarySystem() {
   const [gracePeriodMinutes, setGracePeriodMinutes] = useState<number>(15);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
+
   const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({
     '2026-09': { attendance: {}, paidStatus: {} }
   });
@@ -186,6 +188,53 @@ export default function SalarySystem() {
       salary: employee.salary,
       status: employee.status
     });
+  };
+
+  // Checkbox Selection Handlers for Delete
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      const allIds = employees.map(emp => emp.id);
+      setSelectedEmployeeIds(allIds);
+    } else {
+      setSelectedEmployeeIds([]);
+    }
+  };
+
+  const handleSelectRow = (id: number) => {
+    if (selectedEmployeeIds.includes(id)) {
+      setSelectedEmployeeIds(selectedEmployeeIds.filter(item => item !== id));
+    } else {
+      setSelectedEmployeeIds([...selectedEmployeeIds, id]);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedEmployeeIds.length === 0) {
+      alert('Barah-e-karam pehle koi employee select karein!');
+      return;
+    }
+
+    if (!confirm(`Kya aap waqai ${selectedEmployeeIds.length} employees ko delete karna chahte hain?`)) {
+      return;
+    }
+
+    if (!supabase) {
+      alert('Supabase is not configured.');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('employees')
+      .delete()
+      .in('id', selectedEmployeeIds);
+
+    if (error) {
+      alert('Error deleting employees: ' + error.message);
+    } else {
+      alert('Selected employees successfully delete ho gaye hain!');
+      setSelectedEmployeeIds([]);
+      await fetchEmployees();
+    }
   };
 
   const calculateLateMinutes = (inTime24: string) => {
@@ -609,7 +658,18 @@ export default function SalarySystem() {
                 </form>
 
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Employee Directory</h3>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Employee Directory</h3>
+                    {selectedEmployeeIds.length > 0 && (
+                      <button 
+                        onClick={handleBulkDelete}
+                        className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-md"
+                      >
+                        <span>Delete Selected ({selectedEmployeeIds.length})</span>
+                      </button>
+                    )}
+                  </div>
+
                   {loading ? (
                     <div className="text-center py-6 text-slate-400 text-xs">Loading employees...</div>
                   ) : employees.length === 0 ? (
@@ -618,6 +678,14 @@ export default function SalarySystem() {
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
                         <tr>
+                          <th className="p-2.5 w-10">
+                            <input 
+                              type="checkbox" 
+                              onChange={handleSelectAll}
+                              checked={employees.length > 0 && selectedEmployeeIds.length === employees.length}
+                              className="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                          </th>
                           <th className="p-2.5">Code</th>
                           <th className="p-2.5">Name</th>
                           <th className="p-2.5">Designation</th>
@@ -632,13 +700,21 @@ export default function SalarySystem() {
                       <tbody className="divide-y divide-slate-700/50">
                         {employees.map((emp) => (
                           <tr key={emp.id} className="hover:bg-slate-700/30">
+                            <td className="p-2.5">
+                              <input 
+                                type="checkbox" 
+                                checked={selectedEmployeeIds.includes(emp.id)}
+                                onChange={() => handleSelectRow(emp.id)}
+                                className="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                            </td>
                             <td className="p-2.5 font-semibold text-indigo-400">{emp.machineId}</td>
                             <td className="p-2.5 font-medium text-white">{emp.name}</td>
                             <td className="p-2.5">{emp.designation || '-'}</td>
                             <td className="p-2.5">{emp.dept}</td>
                             <td className="p-2.5">{emp.mobile || '-'}</td>
                             <td className="p-2.5">{emp.salaryType}</td>
-                            <td className="p-2.5 font-semibold">Rs. {parseInt(emp.salary || '0').toLocaleString()}</td>
+                            <td className="p-2.5 font-semibold">Rs. {Number(emp.salary || 0).toLocaleString()}</td>
                             <td className="p-2.5">
                               <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold ${emp.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
                                 {emp.status}
