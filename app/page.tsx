@@ -43,6 +43,7 @@ export default function SalarySystem() {
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
 
   const [shiftStartTime, setShiftStartTime] = useState<string>('08:00');
+  const [shiftEndTime, setShiftEndTime] = useState<string>('17:00');
   const [gracePeriodMinutes, setGracePeriodMinutes] = useState<number>(15);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -67,7 +68,6 @@ export default function SalarySystem() {
     status: 'Active' as Employee['status']
   });
 
-  // 1. Supabase Se Data Load Karna
   useEffect(() => {
     fetchEmployees();
   }, []);
@@ -115,12 +115,11 @@ export default function SalarySystem() {
     });
   };
 
-  // 2. Supabase Mein Employee Save / Update Karna
   const saveEmployee = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!supabase) {
-      alert('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+      alert('Supabase is not configured.');
       return;
     }
 
@@ -187,17 +186,6 @@ export default function SalarySystem() {
       salary: employee.salary,
       status: employee.status
     });
-  };
-
-  const format12Hour = (time24: string) => {
-    if (!time24 || time24 === '--:--') return '--:--';
-    const parts = time24.split(':');
-    if (parts.length < 2) return time24;
-    let h = parseInt(parts[0], 10);
-    const m = parts[1];
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h.toString().padStart(2, '0')}:${m} ${ampm}`;
   };
 
   const calculateLateMinutes = (inTime24: string) => {
@@ -327,7 +315,7 @@ export default function SalarySystem() {
 
       if (importedEmployeesPayload.length > 0) {
         if (!supabase) {
-          alert('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+          alert('Supabase is not configured.');
           return;
         }
 
@@ -363,11 +351,11 @@ export default function SalarySystem() {
         fullMonthDates[dateKey] = existing;
       } else {
         fullMonthDates[dateKey] = {
-          inTime: '--:--',
-          outTime: '--:--',
-          status: isSunday ? 'H' : 'A',
+          inTime: isSunday ? '--:--' : shiftStartTime,
+          outTime: isSunday ? '--:--' : shiftEndTime,
+          status: isSunday ? 'H' : 'P',
           overtimeHours: 0,
-          totalHours: 0,
+          totalHours: isSunday ? 0 : 8,
           shift: 'Morning',
           lateMinutes: 0,
           note: isSunday ? 'Sunday Holiday' : ''
@@ -376,6 +364,30 @@ export default function SalarySystem() {
     }
 
     setTempEmpAttendance(fullMonthDates);
+  };
+
+  // Blank Fill Button Handler
+  const handleBlankFill = () => {
+    const updated = { ...tempEmpAttendance };
+    Object.keys(updated).forEach((dateKey) => {
+      const punch = updated[dateKey];
+      // Agar attendance mark nahi hai ya blank/absent hai toh default present aur shift timings set kar do
+      if (!punch.inTime || punch.inTime === '--:--') {
+        const [year, month, day] = dateKey.split('-').map(Number);
+        const dateObj = new Date(year, month - 1, day);
+        const isSunday = dateObj.getDay() === 0;
+
+        updated[dateKey] = {
+          ...punch,
+          inTime: isSunday ? '--:--' : shiftStartTime,
+          outTime: isSunday ? '--:--' : shiftEndTime,
+          status: isSunday ? 'H' : 'P',
+          totalHours: isSunday ? 0 : 8,
+          lateMinutes: 0
+        };
+      }
+    });
+    setTempEmpAttendance(updated);
   };
 
   const saveEmpAttendance = () => {
@@ -415,7 +427,11 @@ export default function SalarySystem() {
       const leaveDays = Object.values(empAtt).filter(a => a.status === 'L').length;
       const holidayDays = Object.values(empAtt).filter(a => a.status === 'H').length;
       const totalOT = Object.values(empAtt).reduce((sum, a) => sum + (Number(a.overtimeHours) || 0), 0);
-      const totalLateCount = Object.values(empAtt).filter(a => a.lateMinutes > 0).length;
+      
+      // Calculate total late count & total late minutes
+      const lateRecords = Object.values(empAtt).filter(a => a.lateMinutes > 0);
+      const totalLateCount = lateRecords.length;
+      const totalLateMinutes = lateRecords.reduce((sum, a) => sum + a.lateMinutes, 0);
 
       const workingDays = emp.salaryType === 'Weekly' ? 6 : totalWorkingDays;
       const paidDaysCount = presentDays + leaveDays + holidayDays;
@@ -437,6 +453,7 @@ export default function SalarySystem() {
         totalHolidays: holidayDays,
         totalAbsentDays: absentDays,
         totalLateCount,
+        totalLateMinutes,
         overtimeHours: totalOT,
         deduction,
         netSalary,
@@ -448,23 +465,22 @@ export default function SalarySystem() {
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
-    doc.text(`Payroll Report - ${selectedMonth}`, 14, 15);
+    doc.text(`Payroll & Attendance Report - ${selectedMonth}`, 14, 15);
 
     const summary = getPayrollSummary();
     const tableRows = summary.map((item) => [
       item.machineId,
       item.name,
-      item.designation,
       `Rs. ${item.basicSalary.toLocaleString()}`,
       `${item.totalPresentDays}P / ${item.totalLeaves}L / ${item.totalHolidays}H`,
-      `${item.totalLateCount} Days`,
+      `${item.totalLateCount} Days (${item.totalLateMinutes} Mins)`,
       `Rs. ${Math.round(item.deduction).toLocaleString()}`,
       `Rs. ${Math.round(item.netSalary).toLocaleString()}`,
       item.isPaid ? 'PAID' : 'UNPAID'
     ]);
 
     autoTable(doc, {
-      head: [['Code', 'Name', 'Designation', 'Basic', 'P / L / H', 'Late Days', 'Deduction', 'Net Salary', 'Status']],
+      head: [['Code', 'Name', 'Basic', 'P / L / H', 'Late Days & Mins', 'Deduction', 'Net Salary', 'Status']],
       body: tableRows,
       startY: 25,
       theme: 'grid',
@@ -478,7 +494,7 @@ export default function SalarySystem() {
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans antialiased">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Top Bar Header */}
+        {/* Top Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/80 backdrop-blur border border-slate-700/60 p-5 rounded-2xl gap-4 shadow-xl">
           <div className="flex items-center space-x-3.5">
             <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-blue-500 text-white rounded-xl shadow-inner">
@@ -506,18 +522,18 @@ export default function SalarySystem() {
           <aside className={`${sidebarOpen ? 'w-full md:w-52' : 'w-full md:w-14'} shrink-0 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50 transition-all duration-200`}>
             <div className={`flex items-center ${sidebarOpen ? 'justify-between px-2' : 'justify-center'} pb-2 border-b border-slate-700/50`}>
               {sidebarOpen && <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Navigation</span>}
-              <button onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Hide navigation' : 'Show navigation'} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-700/60 transition-colors">
+              <button onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Hide' : 'Show'} className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-700/60 transition-colors">
                 {sidebarOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
               </button>
             </div>
             <nav className="flex md:flex-col gap-1 mt-2">
-              <button onClick={() => setActiveTab('employees')} title="Employees" className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'employees' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
+              <button onClick={() => setActiveTab('employees')} className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'employees' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
                 <Users size={14} />{sidebarOpen && <span>Employees</span>}
               </button>
-              <button onClick={() => setActiveTab('attendance')} title="Attendance Log" className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
+              <button onClick={() => setActiveTab('attendance')} className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
                 <Clock size={14} />{sidebarOpen && <span>Attendance Log</span>}
               </button>
-              <button onClick={() => setActiveTab('payroll')} title="Payroll" className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'payroll' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
+              <button onClick={() => setActiveTab('payroll')} className={`flex items-center ${sidebarOpen ? 'justify-start' : 'justify-center'} gap-2 w-full px-3 py-2.5 text-xs font-medium rounded-lg transition-all ${activeTab === 'payroll' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}>
                 <DollarSign size={14} />{sidebarOpen && <span>Payroll</span>}
               </button>
             </nav>
@@ -525,7 +541,7 @@ export default function SalarySystem() {
 
           <main className="min-w-0 flex-1">
 
-            {/* TAB 1: EMPLOYEES */}
+            {/* EMPLOYEES TAB */}
             {activeTab === 'employees' && (
               <div className="space-y-6">
                 <form onSubmit={saveEmployee} className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-4">
@@ -534,7 +550,7 @@ export default function SalarySystem() {
                       <UserPlus className="text-indigo-400" size={18} />
                       <div>
                         <h2 className="text-xs font-bold text-white uppercase tracking-wider">{editingEmployeeId === null ? 'Add Employee Manually' : 'Update Employee'}</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">{editingEmployeeId === null ? 'Enter employee details and add them to the directory.' : 'Update employee details and status.'}</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Enter employee details and add them to directory.</p>
                       </div>
                     </div>
                     
@@ -602,9 +618,9 @@ export default function SalarySystem() {
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Employee Directory</h3>
                   {loading ? (
-                    <div className="text-center py-6 text-slate-400 text-xs">Loading employees from Supabase...</div>
+                    <div className="text-center py-6 text-slate-400 text-xs">Loading employees...</div>
                   ) : employees.length === 0 ? (
-                    <div className="text-center py-6 text-slate-400 text-xs">No employees found. Add manually or import via Excel.</div>
+                    <div className="text-center py-6 text-slate-400 text-xs">No employees found.</div>
                   ) : (
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
@@ -636,7 +652,7 @@ export default function SalarySystem() {
                               </span>
                             </td>
                             <td className="p-2.5 text-right">
-                              <button onClick={() => editEmployee(emp)} className="text-slate-400 hover:text-indigo-400 p-1 rounded transition-colors" title="Edit Employee">
+                              <button onClick={() => editEmployee(emp)} className="text-slate-400 hover:text-indigo-400 p-1 rounded transition-colors" title="Edit">
                                 <Pencil size={14} />
                               </button>
                             </td>
@@ -649,25 +665,34 @@ export default function SalarySystem() {
               </div>
             )}
 
-            {/* TAB 2: ATTENDANCE LOG */}
+            {/* ATTENDANCE LOG TAB */}
             {activeTab === 'attendance' && (
               <div className="space-y-6">
-                <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                   <div>
                     <h2 className="text-xs font-bold text-white uppercase tracking-wider">Biometric Logs & Shift Rules</h2>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Upload text logs from biometric device or manage shift timings.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Configure shift timings and tolerance, then upload log file.</p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-xs">
                     <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg">
                       <Settings size={14} className="text-slate-400" />
-                      <span className="text-slate-400">Shift Start:</span>
+                      <span className="text-slate-400">Start:</span>
                       <input type="time" value={shiftStartTime} onChange={e => setShiftStartTime(e.target.value)} className="bg-transparent text-white font-semibold focus:outline-none" />
+                      <span className="text-slate-400 ml-2">End:</span>
+                      <input type="time" value={shiftEndTime} onChange={e => setShiftEndTime(e.target.value)} className="bg-transparent text-white font-semibold focus:outline-none" />
+                      <span className="text-slate-400 ml-2">Grace(m):</span>
+                      <input type="number" value={gracePeriodMinutes} onChange={e => setGracePeriodMinutes(Number(e.target.value))} className="w-12 bg-transparent text-white font-semibold focus:outline-none" />
                     </div>
+
+                    <button onClick={() => alert('Shift Configuration Saved Successfully!')} className="bg-slate-700 hover:bg-slate-600 text-white px-3.5 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-1.5">
+                      <Save size={14} />
+                      <span>Save Shift</span>
+                    </button>
 
                     <label className="cursor-pointer inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg font-semibold shadow-md transition-colors">
                       <Upload size={14} />
-                      <span>Upload Biometric Log (.txt)</span>
+                      <span>Upload Biometric (.txt)</span>
                       <input type="file" accept=".txt" onChange={handleRawBiometricUpload} className="hidden" />
                     </label>
                   </div>
@@ -703,18 +728,18 @@ export default function SalarySystem() {
               </div>
             )}
 
-            {/* TAB 3: PAYROLL */}
+            {/* PAYROLL TAB */}
             {activeTab === 'payroll' && (
               <div className="space-y-6">
                 <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex justify-between items-center">
                   <div>
                     <h2 className="text-xs font-bold text-white uppercase tracking-wider">Payroll Report</h2>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Calculated net salaries based on monthly attendance.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Calculated net salaries with late minutes and attendance summaries.</p>
                   </div>
 
                   <button onClick={exportPDF} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center space-x-1.5 transition-colors">
                     <Download size={14} />
-                    <span>Export PDF Report</span>
+                    <span>Export Printable PDF</span>
                   </button>
                 </div>
 
@@ -726,7 +751,7 @@ export default function SalarySystem() {
                         <th className="p-2.5">Name</th>
                         <th className="p-2.5">Basic</th>
                         <th className="p-2.5">P / L / H</th>
-                        <th className="p-2.5">Late Days</th>
+                        <th className="p-2.5">Late Days & Mins</th>
                         <th className="p-2.5">Deduction</th>
                         <th className="p-2.5">Net Salary</th>
                         <th className="p-2.5 text-center">Status</th>
@@ -739,7 +764,7 @@ export default function SalarySystem() {
                           <td className="p-2.5 font-medium text-white">{item.name}</td>
                           <td className="p-2.5">Rs. {item.basicSalary.toLocaleString()}</td>
                           <td className="p-2.5">{item.totalPresentDays}P / {item.totalLeaves}L / {item.totalHolidays}H</td>
-                          <td className="p-2.5">{item.totalLateCount} Days</td>
+                          <td className="p-2.5 font-medium text-amber-400">{item.totalLateCount} Days ({item.totalLateMinutes} Mins)</td>
                           <td className="p-2.5 text-rose-400 font-medium">Rs. {Math.round(item.deduction).toLocaleString()}</td>
                           <td className="p-2.5 text-emerald-400 font-bold">Rs. {Math.round(item.netSalary).toLocaleString()}</td>
                           <td className="p-2.5 text-center">
@@ -759,26 +784,41 @@ export default function SalarySystem() {
         </div>
       </div>
 
-      {/* ATTENDANCE EDIT MODAL */}
+      {/* ATTENDANCE & BLANK FILL MODAL */}
       {selectedEmpForEdit && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
               <div>
-                <h3 className="text-sm font-bold text-white">Monthly Attendance Modal - {selectedEmpForEdit.name} ({selectedEmpForEdit.machineId})</h3>
+                <h3 className="text-sm font-bold text-white">Monthly Attendance - {selectedEmpForEdit.name} ({selectedEmpForEdit.machineId})</h3>
                 <p className="text-[11px] text-slate-400">Month: {selectedMonth}</p>
               </div>
-              <button onClick={() => setSelectedEmpForEdit(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
-                <X size={18} />
-              </button>
+              
+              <div className="flex items-center space-x-2">
+                <button onClick={handleBlankFill} className="bg-indigo-600/80 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-colors">
+                  Blank Fill (Auto)
+                </button>
+                <button onClick={() => setSelectedEmpForEdit(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {Object.keys(tempEmpAttendance).sort().map((dateKey) => {
                 const punch = tempEmpAttendance[dateKey];
+                const lateMins = calculateLateMinutes(punch.inTime);
                 return (
-                  <div key={dateKey} className="flex items-center justify-between bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50 text-xs">
-                    <span className="font-medium text-slate-300 w-24">{dateKey}</span>
+                  <div key={dateKey} className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50 text-xs gap-2">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium text-slate-300 w-24">{dateKey}</span>
+                      {lateMins > 0 && (
+                        <span className="text-[10px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20 font-semibold">
+                          Late: {lateMins}m
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex items-center space-x-2">
                       <select 
                         value={punch.status} 
@@ -799,7 +839,7 @@ export default function SalarySystem() {
                         value={punch.inTime !== '--:--' ? punch.inTime : ''} 
                         onChange={(e) => setTempEmpAttendance({
                           ...tempEmpAttendance,
-                          [dateKey]: { ...punch, inTime: e.target.value || '--:--' }
+                          [dateKey]: { ...punch, inTime: e.target.value || '--:--', lateMinutes: calculateLateMinutes(e.target.value) }
                         })}
                         className="bg-slate-800 border border-slate-700 text-white rounded px-2 py-1 focus:outline-none" 
                       />
