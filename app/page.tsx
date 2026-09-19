@@ -367,20 +367,24 @@ export default function SalarySystem() {
   };
 
   const handleBlankFill = () => {
-    const updated = { ...tempEmpAttendance };
-    Object.keys(updated).forEach(dateKey => {
-      const punch = updated[dateKey];
-      if (!punch.inTime || punch.inTime === '--:--') {
-        punch.inTime = shiftStartTime;
-      }
-      if (!punch.outTime || punch.outTime === '--:--') {
-        punch.outTime = shiftEndTime;
-      }
-      if (!punch.status || punch.status === 'A') {
-        punch.status = 'P';
-        punch.totalHours = 8;
-      }
+    setTempEmpAttendance((prevAttendance) => {
+      const updated = { ...prevAttendance };
+      Object.keys(updated).forEach(dateKey => {
+        const punch = updated[dateKey];
+        if (!punch.inTime || punch.inTime === '--:--') {
+          punch.inTime = shiftStartTime;
+        }
+        if (!punch.outTime || punch.outTime === '--:--') {
+          punch.outTime = shiftEndTime;
+        }
+        if (!punch.status || punch.status === 'A') {
+          punch.status = 'P';
+          punch.totalHours = 8;
+        }
+      });
+      return updated;
     });
+  };
     setTempEmpAttendance(updated);
   };
 
