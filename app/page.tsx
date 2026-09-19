@@ -41,7 +41,6 @@ export default function SalarySystem() {
   const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('attendance');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
-  // Default selected month set to September 2026 based on uploaded file dates
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -52,10 +51,8 @@ export default function SalarySystem() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
 
-  // Store records month-wise dynamically
-  const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({
-    '2026-09': { attendance: {}, paidStatus: {} }
-  });
+  // Initialize with completely empty records so unuploaded months show no fake data
+  const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({});
 
   const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
   const [tempEmpAttendance, setTempEmpAttendance] = useState<{ [date: string]: DailyPunch }>({});
@@ -235,7 +232,6 @@ export default function SalarySystem() {
       const punchLogs: { [machineId: string]: { [date: string]: string[] } } = {};
       const parsedPreview: Array<{machineId: string, timestamp: string, inTime: string, outTime: string}> = [];
       
-      // Track which months are touched in this file to update state accordingly
       const affectedMonths = new Set<string>();
 
       lines.forEach((line) => {
@@ -257,7 +253,7 @@ export default function SalarySystem() {
           }
 
           if (dateStr && mId) {
-            const monthKey = dateStr.substring(0, 7); // e.g. "2026-09"
+            const monthKey = dateStr.substring(0, 7);
             affectedMonths.add(monthKey);
 
             if (!punchLogs[mId]) punchLogs[mId] = {};
@@ -269,7 +265,6 @@ export default function SalarySystem() {
 
       const updatedMonthlyRecords = { ...monthlyRecords };
 
-      // Process logs for each month found in the file
       affectedMonths.forEach(mKey => {
         if (!updatedMonthlyRecords[mKey]) {
           updatedMonthlyRecords[mKey] = { attendance: {}, paidStatus: {} };
@@ -325,7 +320,6 @@ export default function SalarySystem() {
       setMonthlyRecords(updatedMonthlyRecords);
       setAllLogsPreview(parsedPreview);
 
-      // Auto-switch selected month to the first affected month in the file so user sees it right away
       const firstMonth = Array.from(affectedMonths)[0];
       if (firstMonth) {
         setSelectedMonth(firstMonth);
@@ -396,14 +390,14 @@ export default function SalarySystem() {
         fullMonthDates[dateKey] = existing;
       } else {
         fullMonthDates[dateKey] = {
-          inTime: isSunday ? '--:--' : shiftStartTime,
-          outTime: isSunday ? '--:--' : shiftEndTime,
-          status: isSunday ? 'H' : 'P',
+          inTime: '--:--',
+          outTime: '--:--',
+          status: 'A',
           overtimeHours: 0,
-          totalHours: isSunday ? 0 : 8,
+          totalHours: 0,
           shift: 'Morning',
           lateMinutes: 0,
-          note: isSunday ? 'Sunday Holiday' : ''
+          note: ''
         };
       }
     }
