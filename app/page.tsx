@@ -366,6 +366,7 @@ export default function SalarySystem() {
     setTempEmpAttendance(fullMonthDates);
   };
 
+  // Fixed Blank Fill Button Handler for Selected Employee Attendance Modal
   const handleBlankFill = () => {
     const updated = { ...tempEmpAttendance };
     Object.keys(updated).forEach(dateKey => {
