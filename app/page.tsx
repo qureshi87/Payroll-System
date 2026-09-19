@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   Users, Clock, DollarSign, Download, 
-  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil
+  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Search
 } from 'lucide-react';
 import { supabase } from '@/supabaseClient';
 
@@ -40,13 +40,19 @@ interface MonthlyData {
 export default function SalarySystem() {
   const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('attendance');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // Default selected month set to September 2026 based on uploaded file dates
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
+  const [searchTerm, setSearchTerm] = useState<string>('');
 
   const [shiftStartTime, setShiftStartTime] = useState<string>('08:00');
   const [shiftEndTime, setShiftEndTime] = useState<string>('17:00');
   const [gracePeriodMinutes, setGracePeriodMinutes] = useState<number>(15);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
+
+  // Store records month-wise dynamically
   const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({
     '2026-09': { attendance: {}, paidStatus: {} }
   });
@@ -56,6 +62,7 @@ export default function SalarySystem() {
   const [totalWorkingDays] = useState<number>(30);
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [allLogsPreview, setAllLogsPreview] = useState<Array<{machineId: string, timestamp: string, inTime: string, outTime: string}>>([]);
 
   const [newEmployee, setNewEmployee] = useState({
     machineId: '',
@@ -74,10 +81,8 @@ export default function SalarySystem() {
 
   const fetchEmployees = async () => {
     setLoading(true);
-
     if (!supabase) {
       setLoading(false);
-      alert('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
       return;
     }
 
@@ -87,7 +92,7 @@ export default function SalarySystem() {
     } else if (data) {
       const formatted: Employee[] = (data as Array<Record<string, any>>).map((e: Record<string, any>) => ({
         id: e.id,
-        machineId: e.machine_id,
+        machineId: String(e.machine_id || '').trim(),
         name: e.name,
         designation: e.designation || '',
         dept: e.dept || 'Production',
@@ -117,11 +122,7 @@ export default function SalarySystem() {
 
   const saveEmployee = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
-    if (!supabase) {
-      alert('Supabase is not configured.');
-      return;
-    }
+    if (!supabase) return;
 
     const machineId = newEmployee.machineId.trim();
     const name = newEmployee.name.trim();
@@ -129,11 +130,6 @@ export default function SalarySystem() {
 
     if (!machineId || !name || !salary) {
       alert('Machine Code, Name and Salary are required.');
-      return;
-    }
-
-    if (employees.some((emp) => emp.machineId === machineId && emp.id !== editingEmployeeId)) {
-      alert('An employee with this Machine Code already exists.');
       return;
     }
 
@@ -149,20 +145,13 @@ export default function SalarySystem() {
     };
 
     if (editingEmployeeId !== null) {
-      const { error } = await supabase
-        .from('employees')
-        .update(payload)
-        .eq('id', editingEmployeeId);
-
+      const { error } = await supabase.from('employees').update(payload).eq('id', editingEmployeeId);
       if (error) {
         alert('Error updating employee: ' + error.message);
         return;
       }
     } else {
-      const { error } = await supabase
-        .from('employees')
-        .insert([payload]);
-
+      const { error } = await supabase.from('employees').insert([payload]);
       if (error) {
         alert('Error saving employee: ' + error.message);
         return;
@@ -188,6 +177,37 @@ export default function SalarySystem() {
     });
   };
 
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedEmployeeIds(employees.map(emp => emp.id));
+    } else {
+      setSelectedEmployeeIds([]);
+    }
+  };
+
+  const handleSelectRow = (id: number) => {
+    if (selectedEmployeeIds.includes(id)) {
+      setSelectedEmployeeIds(selectedEmployeeIds.filter(item => item !== id));
+    } else {
+      setSelectedEmployeeIds([...selectedEmployeeIds, id]);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedEmployeeIds.length === 0) return;
+    if (!confirm(`Kya aap waqai ${selectedEmployeeIds.length} employees ko delete karna chahte hain?`)) return;
+    if (!supabase) return;
+
+    const { error } = await supabase.from('employees').delete().in('id', selectedEmployeeIds);
+    if (error) {
+      alert('Error deleting employees: ' + error.message);
+    } else {
+      alert('Selected employees successfully delete ho gaye hain!');
+      setSelectedEmployeeIds([]);
+      await fetchEmployees();
+    }
+  };
+
   const calculateLateMinutes = (inTime24: string) => {
     if (!inTime24 || inTime24 === '--:--') return 0;
     const [inH, inM] = inTime24.split(':').map(Number);
@@ -202,17 +222,21 @@ export default function SalarySystem() {
     return 0;
   };
 
-  const handleRawBiometricUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRawBiometricUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const text = event.target?.result as string;
       if (!text) return;
 
       const lines = text.split('\n');
       const punchLogs: { [machineId: string]: { [date: string]: string[] } } = {};
+      const parsedPreview: Array<{machineId: string, timestamp: string, inTime: string, outTime: string}> = [];
+      
+      // Track which months are touched in this file to update state accordingly
+      const affectedMonths = new Set<string>();
 
       lines.forEach((line) => {
         const trimmed = line.trim();
@@ -220,7 +244,7 @@ export default function SalarySystem() {
 
         const parts = trimmed.split(/\s+/);
         if (parts.length >= 2) {
-          const mId = parts[0];
+          const mId = String(parts[0]).trim();
           let dateStr = '';
           let timeStr = '00:00:00';
 
@@ -232,7 +256,10 @@ export default function SalarySystem() {
             timeStr = parts[2];
           }
 
-          if (dateStr) {
+          if (dateStr && mId) {
+            const monthKey = dateStr.substring(0, 7); // e.g. "2026-09"
+            affectedMonths.add(monthKey);
+
             if (!punchLogs[mId]) punchLogs[mId] = {};
             if (!punchLogs[mId][dateStr]) punchLogs[mId][dateStr] = [];
             punchLogs[mId][dateStr].push(timeStr);
@@ -240,49 +267,71 @@ export default function SalarySystem() {
         }
       });
 
-      const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
-      const newAtt = { ...currentData.attendance };
+      const updatedMonthlyRecords = { ...monthlyRecords };
 
-      Object.keys(punchLogs).forEach((mId) => {
-        if (!newAtt[mId]) newAtt[mId] = {};
+      // Process logs for each month found in the file
+      affectedMonths.forEach(mKey => {
+        if (!updatedMonthlyRecords[mKey]) {
+          updatedMonthlyRecords[mKey] = { attendance: {}, paidStatus: {} };
+        }
+        const currentAtt = { ...updatedMonthlyRecords[mKey].attendance };
 
-        Object.keys(punchLogs[mId]).forEach((dateStr) => {
-          const times = punchLogs[mId][dateStr].sort();
-          const rawIn = times[0];
-          const rawOut = times.length > 1 ? times[times.length - 1] : times[0];
+        Object.keys(punchLogs).forEach((mId) => {
+          if (!currentAtt[mId]) currentAtt[mId] = {};
 
-          let totalHours = 0;
-          if (rawIn && rawOut && rawIn !== rawOut) {
-            const [inH, inM] = rawIn.split(':').map(Number);
-            const [outH, outM] = rawOut.split(':').map(Number);
-            totalHours = Math.max(0, parseFloat(((outH + outM / 60) - (inH + inM / 60)).toFixed(2)));
-          }
+          Object.keys(punchLogs[mId]).forEach((dateStr) => {
+            if (!dateStr.startsWith(mKey)) return;
 
-          const otHours = totalHours > 8 ? parseFloat((totalHours - 8).toFixed(1)) : 0;
-          const lateMins = calculateLateMinutes(rawIn);
+            const times = punchLogs[mId][dateStr].sort();
+            const rawIn = times[0];
+            const rawOut = times.length > 1 ? times[times.length - 1] : times[0];
 
-          const existingRecord = newAtt[mId]?.[dateStr];
-          const status = existingRecord?.status === 'L' || existingRecord?.status === 'H' ? existingRecord.status : 'P';
+            let totalHours = 0;
+            if (rawIn && rawOut && rawIn !== rawOut) {
+              const [inH, inM] = rawIn.split(':').map(Number);
+              const [outH, outM] = rawOut.split(':').map(Number);
+              totalHours = Math.max(0, parseFloat(((outH + outM / 60) - (inH + inM / 60)).toFixed(2)));
+            }
 
-          newAtt[mId][dateStr] = {
-            inTime: rawIn ? rawIn.substring(0, 5) : '--:--',
-            outTime: rawOut ? rawOut.substring(0, 5) : '--:--',
-            status,
-            overtimeHours: otHours,
-            totalHours,
-            shift: 'Morning',
-            lateMinutes: lateMins,
-            note: existingRecord?.note || (lateMins > 0 ? `Late ${lateMins}m` : '')
-          };
+            const otHours = totalHours > 8 ? parseFloat((totalHours - 8).toFixed(1)) : 0;
+            const lateMins = calculateLateMinutes(rawIn);
+
+            const existingRecord = currentAtt[mId]?.[dateStr];
+            const status = existingRecord?.status === 'L' || existingRecord?.status === 'H' ? existingRecord.status : 'P';
+
+            currentAtt[mId][dateStr] = {
+              inTime: rawIn ? rawIn.substring(0, 5) : '--:--',
+              outTime: rawOut ? rawOut.substring(0, 5) : '--:--',
+              status,
+              overtimeHours: otHours,
+              totalHours,
+              shift: 'Morning',
+              lateMinutes: lateMins,
+              note: existingRecord?.note || (lateMins > 0 ? `Late ${lateMins}m` : '')
+            };
+
+            parsedPreview.push({
+              machineId: mId,
+              timestamp: dateStr,
+              inTime: rawIn ? rawIn.substring(0, 5) : '--:--',
+              outTime: rawOut ? rawOut.substring(0, 5) : '--:--'
+            });
+          });
         });
+
+        updatedMonthlyRecords[mKey].attendance = currentAtt;
       });
 
-      setMonthlyRecords({
-        ...monthlyRecords,
-        [selectedMonth]: { ...currentData, attendance: newAtt }
-      });
+      setMonthlyRecords(updatedMonthlyRecords);
+      setAllLogsPreview(parsedPreview);
 
-      alert('Biometric Machine Logs Processed Successfully!');
+      // Auto-switch selected month to the first affected month in the file so user sees it right away
+      const firstMonth = Array.from(affectedMonths)[0];
+      if (firstMonth) {
+        setSelectedMonth(firstMonth);
+      }
+
+      alert(`Biometric Machine Logs Processed Successfully for month(s): ${Array.from(affectedMonths).join(', ')}!`);
     };
 
     reader.readAsText(file);
@@ -313,17 +362,12 @@ export default function SalarySystem() {
         status: String(row['Status'] || 'Active').toLowerCase().includes('resign') ? 'Resigned' : 'Active'
       }));
 
-      if (importedEmployeesPayload.length > 0) {
-        if (!supabase) {
-          alert('Supabase is not configured.');
-          return;
-        }
-
+      if (importedEmployeesPayload.length > 0 && supabase) {
         const { error } = await supabase.from('employees').insert(importedEmployeesPayload);
         if (error) {
           alert('Error importing Excel: ' + error.message);
         } else {
-          alert('Employees Imported & Saved to Supabase Successfully!');
+          alert('Employees Imported Successfully!');
           await fetchEmployees();
         }
       }
@@ -334,7 +378,8 @@ export default function SalarySystem() {
 
   const openEmpCalendar = (emp: Employee) => {
     setSelectedEmpForEdit(emp);
-    const empAtt = monthlyRecords[selectedMonth]?.attendance?.[emp.machineId] || {};
+    const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
+    const empAtt = monthData.attendance?.[emp.machineId] || {};
     
     const [year, month] = selectedMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -366,17 +411,12 @@ export default function SalarySystem() {
     setTempEmpAttendance(fullMonthDates);
   };
 
-  // Fixed Blank Fill Button Handler for Selected Employee Attendance Modal
   const handleBlankFill = () => {
     const updated = { ...tempEmpAttendance };
     Object.keys(updated).forEach(dateKey => {
       const punch = updated[dateKey];
-      if (!punch.inTime || punch.inTime === '--:--') {
-        punch.inTime = shiftStartTime;
-      }
-      if (!punch.outTime || punch.outTime === '--:--') {
-        punch.outTime = shiftEndTime;
-      }
+      if (!punch.inTime || punch.inTime === '--:--') punch.inTime = shiftStartTime;
+      if (!punch.outTime || punch.outTime === '--:--') punch.outTime = shiftEndTime;
       if (!punch.status || punch.status === 'A') {
         punch.status = 'P';
         punch.totalHours = 8;
@@ -413,10 +453,16 @@ export default function SalarySystem() {
     });
   };
 
+  const getFilteredEmployees = () => {
+    if (!searchTerm.trim()) return employees;
+    const term = searchTerm.toLowerCase();
+    return employees.filter(e => e.machineId.toLowerCase().includes(term) || e.name.toLowerCase().includes(term));
+  };
+
   const getPayrollSummary = () => {
     const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
 
-    return employees.filter(e => e.status === 'Active').map((emp) => {
+    return getFilteredEmployees().filter(e => e.status === 'Active').map((emp) => {
       const empAtt = monthData.attendance?.[emp.machineId] || {};
       const presentDays = Object.values(empAtt).filter(a => a.status === 'P').length;
       const leaveDays = Object.values(empAtt).filter(a => a.status === 'L').length;
@@ -489,7 +535,7 @@ export default function SalarySystem() {
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Top Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/80 backdrop-blur border border-slate-700/60 p-5 rounded-2xl gap-4 shadow-xl">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/85 backdrop-blur border border-slate-700/60 p-5 rounded-2xl gap-4 shadow-xl">
           <div className="flex items-center space-x-3.5">
             <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-blue-500 text-white rounded-xl shadow-inner">
               <Cpu size={24} />
@@ -510,6 +556,21 @@ export default function SalarySystem() {
               className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer"
             />
           </div>
+        </div>
+
+        {/* Global Search Bar shared across all tabs */}
+        <div className="bg-slate-800/60 border border-slate-700/60 p-3 rounded-xl flex items-center space-x-3 shadow-md">
+          <Search className="text-slate-400 ml-2" size={18} />
+          <input 
+            type="text" 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search employee by name or machine code..."
+            className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="text-xs text-slate-400 hover:text-white px-2 py-1">Clear</button>
+          )}
         </div>
 
         <div className="flex flex-col md:flex-row items-stretch gap-5">
@@ -544,7 +605,7 @@ export default function SalarySystem() {
                       <UserPlus className="text-indigo-400" size={18} />
                       <div>
                         <h2 className="text-xs font-bold text-white uppercase tracking-wider">{editingEmployeeId === null ? 'Add Employee Manually' : 'Update Employee'}</h2>
-                        <p className="text-[11px] text-slate-400 mt-0.5">Enter employee details and add them to directory.</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Enter machine code and details.</p>
                       </div>
                     </div>
                     
@@ -558,11 +619,11 @@ export default function SalarySystem() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                     <div>
                       <label className="block text-slate-400 mb-1">Machine Code *</label>
-                      <input type="text" value={newEmployee.machineId} onChange={e => setNewEmployee({...newEmployee, machineId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. 1001" />
+                      <input type="text" value={newEmployee.machineId} onChange={e => setNewEmployee({...newEmployee, machineId: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. 8383" />
                     </div>
                     <div>
                       <label className="block text-slate-400 mb-1">Full Name *</label>
-                      <input type="text" value={newEmployee.name} onChange={e => setNewEmployee({...newEmployee, name: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Muhammad Ali" />
+                      <input type="text" value={newEmployee.name} onChange={e => setNewEmployee({...newEmployee, name: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Ansar Masih" />
                     </div>
                     <div>
                       <label className="block text-slate-400 mb-1">Designation</label>
@@ -570,7 +631,7 @@ export default function SalarySystem() {
                     </div>
                     <div>
                       <label className="block text-slate-400 mb-1">Department</label>
-                      <input type="text" value={newEmployee.dept} onChange={e => setNewEmployee({...newEmployee, dept: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Stitching" />
+                      <input type="text" value={newEmployee.dept} onChange={e => setNewEmployee({...newEmployee, dept: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white focus:outline-none focus:border-indigo-500" placeholder="e.g. Production" />
                     </div>
                     <div>
                       <label className="block text-slate-400 mb-1">Mobile No.</label>
@@ -598,11 +659,11 @@ export default function SalarySystem() {
 
                   <div className="flex items-center justify-end space-x-2 pt-2">
                     {editingEmployeeId !== null && (
-                      <button type="button" onClick={resetEmployeeForm} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold transition-colors">
+                      <button type="button" onClick={resetEmployeeForm} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold">
                         Cancel
                       </button>
                     )}
-                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-xs font-semibold shadow-md transition-colors flex items-center space-x-1.5">
+                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center space-x-1.5">
                       <Save size={14} />
                       <span>{editingEmployeeId === null ? 'Save Employee' : 'Update Employee'}</span>
                     </button>
@@ -610,16 +671,32 @@ export default function SalarySystem() {
                 </form>
 
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Employee Directory</h3>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Employee Directory</h3>
+                    {selectedEmployeeIds.length > 0 && (
+                      <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md">
+                        <span>Delete Selected ({selectedEmployeeIds.length})</span>
+                      </button>
+                    )}
+                  </div>
+
                   {loading ? (
                     <div className="text-center py-6 text-slate-400 text-xs">Loading employees...</div>
-                  ) : employees.length === 0 ? (
+                  ) : getFilteredEmployees().length === 0 ? (
                     <div className="text-center py-6 text-slate-400 text-xs">No employees found.</div>
                   ) : (
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
                         <tr>
-                          <th className="p-2.5">Code</th>
+                          <th className="p-2.5 w-10">
+                            <input 
+                              type="checkbox" 
+                              onChange={handleSelectAll}
+                              checked={employees.length > 0 && selectedEmployeeIds.length === employees.length}
+                              className="rounded bg-slate-800 border-slate-700 text-indigo-600 cursor-pointer"
+                            />
+                          </th>
+                          <th className="p-2.5">Machine Code</th>
                           <th className="p-2.5">Name</th>
                           <th className="p-2.5">Designation</th>
                           <th className="p-2.5">Dept</th>
@@ -631,22 +708,30 @@ export default function SalarySystem() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-700/50">
-                        {employees.map((emp) => (
+                        {getFilteredEmployees().map((emp) => (
                           <tr key={emp.id} className="hover:bg-slate-700/30">
-                            <td className="p-2.5 font-semibold text-indigo-400">{emp.machineId}</td>
+                            <td className="p-2.5">
+                              <input 
+                                type="checkbox" 
+                                checked={selectedEmployeeIds.includes(emp.id)}
+                                onChange={() => handleSelectRow(emp.id)}
+                                className="rounded bg-slate-800 border-slate-700 text-indigo-600 cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-2.5 font-bold text-indigo-400">{emp.machineId}</td>
                             <td className="p-2.5 font-medium text-white">{emp.name}</td>
                             <td className="p-2.5">{emp.designation || '-'}</td>
                             <td className="p-2.5">{emp.dept}</td>
                             <td className="p-2.5">{emp.mobile || '-'}</td>
                             <td className="p-2.5">{emp.salaryType}</td>
-                            <td className="p-2.5 font-semibold">Rs. {parseInt(emp.salary || '0').toLocaleString()}</td>
+                            <td className="p-2.5 font-semibold">Rs. {Number(emp.salary || 0).toLocaleString()}</td>
                             <td className="p-2.5">
                               <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold ${emp.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
                                 {emp.status}
                               </span>
                             </td>
                             <td className="p-2.5 text-right">
-                              <button onClick={() => editEmployee(emp)} className="text-slate-400 hover:text-indigo-400 p-1 rounded transition-colors" title="Edit">
+                              <button onClick={() => editEmployee(emp)} className="text-slate-400 hover:text-indigo-400 p-1" title="Edit">
                                 <Pencil size={14} />
                               </button>
                             </td>
@@ -665,7 +750,7 @@ export default function SalarySystem() {
                 <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                   <div>
                     <h2 className="text-xs font-bold text-white uppercase tracking-wider">Biometric Logs & Shift Rules</h2>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Configure shift timings and tolerance, then upload log file.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Upload .dat/.txt machine log file to populate punch times for {selectedMonth}.</p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -679,34 +764,58 @@ export default function SalarySystem() {
                       <input type="number" value={gracePeriodMinutes} onChange={e => setGracePeriodMinutes(Number(e.target.value))} className="w-12 bg-transparent text-white font-semibold focus:outline-none" />
                     </div>
 
-                    <button onClick={() => alert('Shift Configuration Saved Successfully!')} className="bg-slate-700 hover:bg-slate-600 text-white px-3.5 py-2 rounded-lg font-semibold transition-colors flex items-center space-x-1.5">
-                      <Save size={14} />
-                      <span>Save Shift</span>
-                    </button>
-
                     <label className="cursor-pointer inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg font-semibold shadow-md transition-colors">
                       <Upload size={14} />
-                      <span>Upload Biometric (.txt)</span>
-                      <input type="file" accept=".txt" onChange={handleRawBiometricUpload} className="hidden" />
+                      <span>Upload Biometric (.dat / .txt)</span>
+                      <input type="file" accept=".txt,.dat,.csv" onChange={handleRawBiometricUpload} className="hidden" />
                     </label>
                   </div>
                 </div>
+
+                {/* Uploaded Punch Logs Live Preview Section */}
+                {allLogsPreview.length > 0 && (
+                  <div className="bg-slate-800/60 border border-indigo-500/40 rounded-2xl p-4 shadow-xl overflow-x-auto">
+                    <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">Recently Uploaded Punch Logs Preview</h3>
+                    <div className="max-h-48 overflow-y-auto">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-900 text-slate-400 sticky top-0">
+                          <tr>
+                            <th className="p-2">Machine ID</th>
+                            <th className="p-2">Date</th>
+                            <th className="p-2">In Time</th>
+                            <th className="p-2">Out Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/50">
+                          {allLogsPreview.slice(0, 50).map((log, idx) => (
+                            <tr key={idx} className="hover:bg-slate-700/30">
+                              <td className="p-2 font-bold text-indigo-400">{log.machineId}</td>
+                              <td className="p-2">{log.timestamp}</td>
+                              <td className="p-2 text-emerald-400 font-semibold">{log.inTime}</td>
+                              <td className="p-2 text-amber-400 font-semibold">{log.outTime}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Attendance Dashboard ({selectedMonth})</h3>
                   <table className="w-full text-left text-xs text-slate-300">
                     <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
                       <tr>
-                        <th className="p-2.5">Code</th>
+                        <th className="p-2.5">Machine Code</th>
                         <th className="p-2.5">Name</th>
                         <th className="p-2.5">Dept</th>
-                        <th className="p-2.5 text-center">Calendar / Edit</th>
+                        <th className="p-2.5 text-center">Calendar / Edit Punch Times</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
-                      {employees.filter(e => e.status === 'Active').map((emp) => (
+                      {getFilteredEmployees().filter(e => e.status === 'Active').map((emp) => (
                         <tr key={emp.id} className="hover:bg-slate-700/30">
-                          <td className="p-2.5 font-semibold text-indigo-400">{emp.machineId}</td>
+                          <td className="p-2.5 font-bold text-indigo-400">{emp.machineId}</td>
                           <td className="p-2.5 font-medium text-white">{emp.name}</td>
                           <td className="p-2.5">{emp.dept}</td>
                           <td className="p-2.5 text-center">
@@ -727,8 +836,8 @@ export default function SalarySystem() {
               <div className="space-y-6">
                 <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex justify-between items-center">
                   <div>
-                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">Payroll Report</h2>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Calculated net salaries with late minutes and attendance summaries.</p>
+                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">Payroll Report for {selectedMonth}</h2>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Calculated net salaries mapped strictly to the selected month.</p>
                   </div>
 
                   <button onClick={exportPDF} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center space-x-1.5 transition-colors">
@@ -741,7 +850,7 @@ export default function SalarySystem() {
                   <table className="w-full text-left text-xs text-slate-300">
                     <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
                       <tr>
-                        <th className="p-2.5">Code</th>
+                        <th className="p-2.5">Machine Code</th>
                         <th className="p-2.5">Name</th>
                         <th className="p-2.5">Basic</th>
                         <th className="p-2.5">P / L / H</th>
@@ -754,7 +863,7 @@ export default function SalarySystem() {
                     <tbody className="divide-y divide-slate-700/50">
                       {getPayrollSummary().map((item) => (
                         <tr key={item.machineId} className="hover:bg-slate-700/30">
-                          <td className="p-2.5 font-semibold text-indigo-400">{item.machineId}</td>
+                          <td className="p-2.5 font-bold text-indigo-400">{item.machineId}</td>
                           <td className="p-2.5 font-medium text-white">{item.name}</td>
                           <td className="p-2.5">Rs. {item.basicSalary.toLocaleString()}</td>
                           <td className="p-2.5">{item.totalPresentDays}P / {item.totalLeaves}L / {item.totalHolidays}H</td>
@@ -778,13 +887,13 @@ export default function SalarySystem() {
         </div>
       </div>
 
-      {/* ATTENDANCE & BLANK FILL MODAL */}
+      {/* ATTENDANCE MODAL */}
       {selectedEmpForEdit && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center border-b border-slate-700 pb-3">
               <div>
-                <h3 className="text-sm font-bold text-white">Monthly Attendance - {selectedEmpForEdit.name} ({selectedEmpForEdit.machineId})</h3>
+                <h3 className="text-sm font-bold text-white">Monthly Attendance - {selectedEmpForEdit.name} (Code: {selectedEmpForEdit.machineId})</h3>
                 <p className="text-[11px] text-slate-400">Month: {selectedMonth}</p>
               </div>
               
