@@ -367,28 +367,18 @@ export default function SalarySystem() {
   };
 
   // Blank Fill Button Handler
-  const handleBlankFill = () => {
-    const updated = { ...tempEmpAttendance };
-    Object.keys(updated).forEach((dateKey) => {
-      const punch = updated[dateKey];
-      // Agar attendance mark nahi hai ya blank/absent hai toh default present aur shift timings set kar do
-      if (!punch.inTime || punch.inTime === '--:--') {
-        const [year, month, day] = dateKey.split('-').map(Number);
-        const dateObj = new Date(year, month - 1, day);
-        const isSunday = dateObj.getDay() === 0;
-
-        updated[dateKey] = {
-          ...punch,
-          inTime: isSunday ? '--:--' : shiftStartTime,
-          outTime: isSunday ? '--:--' : shiftEndTime,
-          status: isSunday ? 'H' : 'P',
-          totalHours: isSunday ? 0 : 8,
-          lateMinutes: 0
-        };
-      }
-    });
-    setTempEmpAttendance(updated);
-  };
+ const handleFillAllBlanks = () => {
+  // Misal ke taur par agar aap state update kar rahe hain:
+  const updatedLogs = logs.map(log => {
+    // Check karein ke agar Punch In ya Punch Out khali hai, toh default time (jaise 09:00 aur 17:00) set kar dein
+    return {
+      ...log,
+      punch_in: log.punch_in || "09:00", 
+      punch_out: log.punch_out || "17:00"
+    };
+  });
+  setLogs(updatedLogs);
+};
 
   const saveEmpAttendance = () => {
     if (!selectedEmpForEdit) return;
