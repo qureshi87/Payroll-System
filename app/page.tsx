@@ -366,19 +366,24 @@ export default function SalarySystem() {
     setTempEmpAttendance(fullMonthDates);
   };
 
-  // Blank Fill Button Handler
- const handleFillAllBlanks = () => {
-  // Misal ke taur par agar aap state update kar rahe hain:
-  const updatedLogs = logs.map(log => {
-    // Check karein ke agar Punch In ya Punch Out khali hai, toh default time (jaise 09:00 aur 17:00) set kar dein
-    return {
-      ...log,
-      punch_in: log.punch_in || "09:00", 
-      punch_out: log.punch_out || "17:00"
-    };
-  });
-  setLogs(updatedLogs);
-};
+  // Fixed Blank Fill Button Handler for Selected Employee Attendance Modal
+  const handleBlankFill = () => {
+    const updated = { ...tempEmpAttendance };
+    Object.keys(updated).forEach(dateKey => {
+      const punch = updated[dateKey];
+      if (!punch.inTime || punch.inTime === '--:--') {
+        punch.inTime = shiftStartTime;
+      }
+      if (!punch.outTime || punch.outTime === '--:--') {
+        punch.outTime = shiftEndTime;
+      }
+      if (!punch.status || punch.status === 'A') {
+        punch.status = 'P';
+        punch.totalHours = 8;
+      }
+    });
+    setTempEmpAttendance(updated);
+  };
 
   const saveEmpAttendance = () => {
     if (!selectedEmpForEdit) return;
@@ -418,7 +423,6 @@ export default function SalarySystem() {
       const holidayDays = Object.values(empAtt).filter(a => a.status === 'H').length;
       const totalOT = Object.values(empAtt).reduce((sum, a) => sum + (Number(a.overtimeHours) || 0), 0);
       
-      // Calculate total late count & total late minutes
       const lateRecords = Object.values(empAtt).filter(a => a.lateMinutes > 0);
       const totalLateCount = lateRecords.length;
       const totalLateMinutes = lateRecords.reduce((sum, a) => sum + a.lateMinutes, 0);
