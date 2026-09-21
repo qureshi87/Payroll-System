@@ -62,6 +62,7 @@ export default function SalarySystem() {
   const [totalWorkingDays] = useState<number>(30);
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [allLogsPreview, setAllLogsPreview] = useState<Array<{machineId: string, timestamp: string, inTime: string, outTime: string}>>([]);
 
   const [newEmployee, setNewEmployee] = useState({
@@ -78,6 +79,12 @@ export default function SalarySystem() {
   useEffect(() => {
     fetchEmployees();
   }, []);
+
+  useEffect(() => {
+    if (selectedMonth) {
+      fetchAttendanceForMonth(selectedMonth);
+    }
+  }, [selectedMonth]);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -104,6 +111,33 @@ export default function SalarySystem() {
       setEmployees(formatted);
     }
     setLoading(false);
+  };
+
+  const fetchAttendanceForMonth = async (monthKey: string) => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('month', monthKey);
+
+    if (error) {
+      console.error('Error fetching attendance:', error.message);
+    } else if (data) {
+      const attMap: { [machineId: string]: { [date: string]: DailyPunch } } = {};
+      (data as Array<Record<string, any>>).forEach((row) => {
+        if (row.machine_id && row.attendance_data) {
+          attMap[row.machine_id] = row.attendance_data;
+        }
+      });
+
+      setMonthlyRecords((prev) => ({
+        ...prev,
+        [monthKey]: {
+          ...(prev[monthKey] || { attendance: {}, paidStatus: {} }),
+          attendance: attMap
+        }
+      }));
+    }
   };
 
   const resetEmployeeForm = () => {
@@ -503,20 +537,45 @@ export default function SalarySystem() {
     setTempEmpAttendance(updated);
   };
 
-  const saveEmpAttendance = () => {
-    if (!selectedEmpForEdit) return;
-    const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
-    setMonthlyRecords({
-      ...monthlyRecords,
-      [selectedMonth]: {
-        ...currentData,
-        attendance: {
-          ...currentData.attendance,
-          [selectedEmpForEdit.machineId]: tempEmpAttendance
-        }
+  const handleSaveAttendance = async () => {
+    if (!selectedEmpForEdit || !supabase) return;
+    setIsSaving(true);
+    try {
+      const payload = {
+        machine_id: selectedEmpForEdit.machineId,
+        month: selectedMonth,
+        attendance_data: tempEmpAttendance,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('attendance')
+        .upsert([payload], { onConflict: 'machine_id,month' });
+
+      if (error) {
+        console.error('Error saving attendance:', error.message);
+        alert(`Data save karne mein error aya hai: ${error.message}`);
+      } else {
+        alert('Attendance successfully save ho gayi hai!');
+        const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
+        setMonthlyRecords({
+          ...monthlyRecords,
+          [selectedMonth]: {
+            ...currentData,
+            attendance: {
+              ...currentData.attendance,
+              [selectedEmpForEdit.machineId]: tempEmpAttendance
+            }
+          }
+        });
+        setSelectedEmpForEdit(null);
       }
-    });
-    setSelectedEmpForEdit(null);
+    } catch (err: any) {
+      console.error('Unexpected error:', err);
+      alert('Aik unexpected error pesh aya hai.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const togglePaidStatus = (machineId: string) => {
@@ -1300,8 +1359,12 @@ export default function SalarySystem() {
                 <button onClick={() => setSelectedEmpForEdit(null)} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-1.5 rounded-lg text-xs font-semibold">
                   Cancel
                 </button>
-                <button onClick={saveEmpAttendance} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-md">
-                  Save Changes
+                <button 
+                  onClick={handleSaveAttendance} 
+                  disabled={isSaving}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-md disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>
