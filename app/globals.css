@@ -24,3 +24,97 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ==========================================
+   A4 Print & PDF Professional Optimization
+   ========================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11px !important;
+    line-height: 1.2 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-area, #printable-area * {
+    visibility: visible;
+  }
+
+  #printable-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  .no-print, nav, header, aside, button, .sidebar {
+    display: none !important;
+  }
+
+  /* Summary cards and tables full width formatting */
+  .grid, [class*="grid-cols"] {
+    display: flex !important;
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+    width: 100% !important;
+  }
+
+  .grid > div {
+    flex: 1 !important;
+    background: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    padding: 8px !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 10px !important;
+    margin-top: 8px !important;
+  }
+
+  th, td {
+    padding: 5px 8px !important;
+    border: 1px solid #475569 !important;
+    text-align: left !important;
+  }
+
+  thead {
+    display: table-header-group;
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+  }
+
+  thead th {
+    background-color: #1e293b !important;
+    color: #ffffff !important;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

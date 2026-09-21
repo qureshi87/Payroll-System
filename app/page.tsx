@@ -1,11 +1,11 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   Users, Clock, DollarSign, Download, 
-  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Search
+  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Search, Eye, Printer
 } from 'lucide-react';
 import { supabase } from '@/supabaseClient';
 
@@ -45,6 +45,7 @@ export default function SalarySystem() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [employeeIdSearch, setEmployeeIdSearch] = useState<string>('');
   const [employeeNameSearch, setEmployeeNameSearch] = useState<string>('');
+  const monthInputRef = useRef<HTMLInputElement>(null);
 
   const [shiftStartTime, setShiftStartTime] = useState<string>('08:00');
   const [shiftEndTime, setShiftEndTime] = useState<string>('17:00');
@@ -53,9 +54,9 @@ export default function SalarySystem() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
 
-  // Initialize with completely empty records so unuploaded months show no fake data
   const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({});
 
+  const [selectedEmpForView, setSelectedEmpForView] = useState<Employee | null>(null);
   const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
   const [tempEmpAttendance, setTempEmpAttendance] = useState<{ [date: string]: DailyPunch }>({});
   const [totalWorkingDays] = useState<number>(30);
@@ -125,7 +126,7 @@ export default function SalarySystem() {
 
     const machineId = newEmployee.machineId.trim();
     const name = newEmployee.name.trim();
-    const salary = newEmployee.salary.trim();
+    const salary = String(newEmployee.salary || "").trim();
 
     if (!machineId || !name || !salary) {
       alert('Machine Code, Name and Salary are required.');
@@ -163,6 +164,7 @@ export default function SalarySystem() {
   };
 
   const editEmployee = (employee: Employee) => {
+    setActiveTab('employees');
     setEditingEmployeeId(employee.id);
     setNewEmployee({
       machineId: employee.machineId,
@@ -216,9 +218,40 @@ export default function SalarySystem() {
     const expectedMins = startH * 60 + startM;
 
     if (inTotalMins > expectedMins + gracePeriodMinutes) {
-      return inTotalMins - expectedMins;
+      return inTotalMins - expectedMins - gracePeriodMinutes;
     }
     return 0;
+  };
+
+  const getShiftHours = () => {
+    const [startH, startM] = shiftStartTime.split(':').map(Number);
+    const [endH, endM] = shiftEndTime.split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    let endMinutes = endH * 60 + endM;
+    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
+    return (endMinutes - startMinutes) / 60;
+  };
+
+  const getPunchDurationHours = (inTime: string, outTime: string) => {
+    const [inH, inM] = inTime.split(':').map(Number);
+    const [outH, outM] = outTime.split(':').map(Number);
+    const inMinutes = inH * 60 + inM;
+    let outMinutes = outH * 60 + outM;
+    if (outMinutes < inMinutes) outMinutes += 24 * 60;
+    return Math.max(0, parseFloat(((outMinutes - inMinutes) / 60).toFixed(2)));
+  };
+
+  const isOvernightPunchPair = (inTime: string, outTime: string) => {
+    const [inH, inM] = inTime.split(':').map(Number);
+    const [outH, outM] = outTime.split(':').map(Number);
+    const inMinutes = inH * 60 + inM;
+    const outMinutes = outH * 60 + outM;
+    const [startH, startM] = shiftStartTime.split(':').map(Number);
+    const [endH, endM] = shiftEndTime.split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+
+    return inMinutes >= endMinutes && outMinutes <= startMinutes;
   };
 
   const handleRawBiometricUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -267,6 +300,22 @@ export default function SalarySystem() {
 
       const updatedMonthlyRecords = { ...monthlyRecords };
 
+      Object.values(punchLogs).forEach((employeeLogs) => {
+        const dateKeys = Object.keys(employeeLogs).sort();
+        for (let index = 0; index < dateKeys.length - 1; index += 1) {
+          const dateKey = dateKeys[index];
+          const nextDateKey = dateKeys[index + 1];
+          const currentTimes = employeeLogs[dateKey];
+          const nextTimes = employeeLogs[nextDateKey];
+
+          if (currentTimes.length === 1 && nextTimes.length === 1 && isOvernightPunchPair(currentTimes[0], nextTimes[0])) {
+            currentTimes.push(nextTimes[0]);
+            delete employeeLogs[nextDateKey];
+            dateKeys.splice(index + 1, 1);
+          }
+        }
+      });
+
       affectedMonths.forEach(mKey => {
         if (!updatedMonthlyRecords[mKey]) {
           updatedMonthlyRecords[mKey] = { attendance: {}, paidStatus: {} };
@@ -285,12 +334,13 @@ export default function SalarySystem() {
 
             let totalHours = 0;
             if (rawIn && rawOut && rawIn !== rawOut) {
-              const [inH, inM] = rawIn.split(':').map(Number);
-              const [outH, outM] = rawOut.split(':').map(Number);
-              totalHours = Math.max(0, parseFloat(((outH + outM / 60) - (inH + inM / 60)).toFixed(2)));
+              totalHours = getPunchDurationHours(rawIn, rawOut);
             }
 
-            const otHours = totalHours > 8 ? parseFloat((totalHours - 8).toFixed(1)) : 0;
+            const regularShiftHours = getShiftHours();
+            const otHours = totalHours > regularShiftHours
+              ? parseFloat((totalHours - regularShiftHours).toFixed(1))
+              : 0;
             const lateMins = calculateLateMinutes(rawIn);
 
             const existingRecord = currentAtt[mId]?.[dateStr];
@@ -339,7 +389,7 @@ export default function SalarySystem() {
     if (!file) return;
 
     if (!supabase) {
-      alert('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart the dev server.');
+      alert('Supabase is not configured.');
       e.target.value = '';
       return;
     }
@@ -381,8 +431,17 @@ export default function SalarySystem() {
     e.target.value = '';
   };
 
-  const openEmpCalendar = (emp: Employee) => {
+  const openEmpViewModal = (emp: Employee) => {
+    setSelectedEmpForView(emp);
+    prepareMonthAttendance(emp);
+  };
+
+  const openEmpEditModal = (emp: Employee) => {
     setSelectedEmpForEdit(emp);
+    prepareMonthAttendance(emp);
+  };
+
+  const prepareMonthAttendance = (emp: Employee) => {
     const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
     const empAtt = monthData.attendance?.[emp.machineId] || {};
     
@@ -391,9 +450,6 @@ export default function SalarySystem() {
     
     const fullMonthDates: { [date: string]: DailyPunch } = {};
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateObj = new Date(year, month - 1, day);
-      const isSunday = dateObj.getDay() === 0;
-
       const dateKey = `${selectedMonth}-${String(day).padStart(2, '0')}`;
       const existing = empAtt[dateKey];
 
@@ -426,6 +482,23 @@ export default function SalarySystem() {
         punch.status = 'P';
         punch.totalHours = 8;
       }
+    });
+    setTempEmpAttendance(updated);
+  };
+
+  const handleAllClear = () => {
+    const updated = { ...tempEmpAttendance };
+    Object.keys(updated).forEach(dateKey => {
+      updated[dateKey] = {
+        inTime: '--:--',
+        outTime: '--:--',
+        status: 'A',
+        overtimeHours: 0,
+        totalHours: 0,
+        shift: 'Morning',
+        lateMinutes: 0,
+        note: ''
+      };
     });
     setTempEmpAttendance(updated);
   };
@@ -492,6 +565,28 @@ export default function SalarySystem() {
     setSearchTerm('');
   };
 
+  const getCalculationsForAttendance = (attendanceMap: { [date: string]: DailyPunch }, emp: Employee) => {
+    const workingDays = emp.salaryType === 'Weekly' ? 6 : totalWorkingDays;
+    const basic = parseFloat(emp.salary) || 0;
+    
+    const absentDays = Object.values(attendanceMap).filter(a => a.status === 'A').length;
+    const absentDeduction = (basic / workingDays) * absentDays;
+
+    const totalLateMins = Object.values(attendanceMap).reduce((sum, a) => sum + (a.lateMinutes || 0), 0);
+    const perMinuteRate = basic / (workingDays * 8 * 60);
+    const lateDeduction = totalLateMins * perMinuteRate;
+
+    const totalDeduction = absentDeduction + lateDeduction;
+    const netSalary = Math.max(0, basic - totalDeduction);
+
+    return {
+      totalDeduction: Math.round(totalDeduction),
+      netPayable: Math.round(netSalary),
+      absentDays,
+      totalLateMins
+    };
+  };
+
   const getPayrollSummary = () => {
     const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
 
@@ -511,9 +606,13 @@ export default function SalarySystem() {
       const absentDays = Math.max(0, workingDays - paidDaysCount);
       
       const basic = parseFloat(emp.salary) || 0;
-      const deduction = (basic / workingDays) * absentDays;
+      const absentDeduction = (basic / workingDays) * absentDays;
+      const perMinuteRate = basic / (workingDays * 8 * 60);
+      const lateDeduction = totalLateMinutes * perMinuteRate;
+      const totalDeduction = absentDeduction + lateDeduction;
+
       const overtimePay = totalOT * 200;
-      const netSalary = Math.max(0, basic - deduction + overtimePay);
+      const netSalary = Math.max(0, basic - totalDeduction + overtimePay);
 
       return {
         machineId: emp.machineId,
@@ -528,7 +627,7 @@ export default function SalarySystem() {
         totalLateCount,
         totalLateMinutes,
         overtimeHours: totalOT,
-        deduction,
+        deduction: totalDeduction,
         netSalary,
         isPaid: monthData.paidStatus?.[emp.machineId] || false
       };
@@ -565,9 +664,39 @@ export default function SalarySystem() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans antialiased">
+      
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .printable-report, .printable-report * {
+            visibility: visible;
+          }
+          .printable-report {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: white !important;
+            color: black !important;
+            padding: 20px;
+          }
+          .no-print {
+            display: none !important;
+          }
+          input, select {
+            border: none !important;
+            background: transparent !important;
+            color: black !important;
+            appearance: none;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
+
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Top Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/85 backdrop-blur border border-slate-700/60 p-5 rounded-2xl gap-4 shadow-xl">
           <div className="flex items-center space-x-3.5">
             <div className="p-2.5 bg-gradient-to-tr from-indigo-500 to-blue-500 text-white rounded-xl shadow-inner">
@@ -591,7 +720,6 @@ export default function SalarySystem() {
           </div>
         </div>
 
-        {/* Employee / Name / Month Record Finder */}
         <div className="bg-slate-800/70 border border-slate-700/70 p-4 rounded-2xl shadow-xl">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
@@ -620,11 +748,15 @@ export default function SalarySystem() {
                 <input type="text" value={employeeNameSearch} onChange={(e) => setEmployeeNameSearch(e.target.value)} placeholder="Search by employee name" className="w-full bg-slate-900/80 border border-slate-700 text-white text-xs rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:border-indigo-500" />
               </div>
             </label>
-            <label className="block">
+            <label
+              htmlFor="record-month"
+              onClick={() => monthInputRef.current?.showPicker?.()}
+              className="block cursor-pointer"
+            >
               <span className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Month</span>
               <div className="relative">
                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={14} />
-                <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full bg-slate-900/80 border border-slate-700 text-white text-xs rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:border-indigo-500" />
+                <input id="record-month" ref={monthInputRef} type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full bg-slate-900/80 border border-slate-700 text-white text-xs rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:border-indigo-500" />
               </div>
             </label>
           </div>
@@ -682,7 +814,6 @@ export default function SalarySystem() {
 
           <main className="min-w-0 flex-1">
 
-            {/* EMPLOYEES TAB */}
             {activeTab === 'employees' && (
               <div className="space-y-6">
                 <form onSubmit={saveEmployee} className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl space-y-4">
@@ -817,8 +948,8 @@ export default function SalarySystem() {
                               </span>
                             </td>
                             <td className="p-2.5 text-right">
-                              <button onClick={() => editEmployee(emp)} className="text-slate-400 hover:text-indigo-400 p-1" title="Edit">
-                                <Pencil size={14} />
+                              <button onClick={() => editEmployee(emp)} className="bg-slate-700 hover:bg-slate-600 text-indigo-300 px-2 py-1 rounded text-[11px] font-medium inline-flex items-center gap-1" title="Edit Employee Info">
+                                <Pencil size={12} /> Edit
                               </button>
                             </td>
                           </tr>
@@ -830,7 +961,6 @@ export default function SalarySystem() {
               </div>
             )}
 
-            {/* ATTENDANCE LOG TAB */}
             {activeTab === 'attendance' && (
               <div className="space-y-6">
                 <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -858,7 +988,6 @@ export default function SalarySystem() {
                   </div>
                 </div>
 
-                {/* Uploaded Punch Logs Live Preview Section */}
                 {allLogsPreview.length > 0 && (
                   <div className="bg-slate-800/60 border border-indigo-500/40 rounded-2xl p-4 shadow-xl overflow-x-auto">
                     <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">Recently Uploaded Punch Logs Preview</h3>
@@ -895,7 +1024,7 @@ export default function SalarySystem() {
                         <th className="p-2.5">Machine Code</th>
                         <th className="p-2.5">Name</th>
                         <th className="p-2.5">Dept</th>
-                        <th className="p-2.5 text-center">Calendar / Edit Punch Times</th>
+                        <th className="p-2.5 text-center">Actions (View Report / Edit)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
@@ -905,9 +1034,23 @@ export default function SalarySystem() {
                           <td className="p-2.5 font-medium text-white">{emp.name}</td>
                           <td className="p-2.5">{emp.dept}</td>
                           <td className="p-2.5 text-center">
-                            <button onClick={() => openEmpCalendar(emp)} className="bg-slate-700 hover:bg-slate-600 text-indigo-300 border border-slate-600 px-3 py-1 rounded-lg text-xs font-medium transition-colors">
-                              View / Edit Attendance
-                            </button>
+                            <div className="inline-flex items-center gap-2">
+                              <button 
+                                onClick={() => openEmpViewModal(emp)} 
+                                className="bg-slate-700 hover:bg-slate-600 text-indigo-300 border border-slate-600 px-3 py-1 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition-colors"
+                                title="View Attendance Report"
+                              >
+                                <Eye size={13} /> View Report
+                              </button>
+                              
+                              <button 
+                                onClick={() => openEmpEditModal(emp)} 
+                                className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-200 border border-indigo-500/30 px-3 py-1 rounded-lg text-xs font-medium inline-flex items-center gap-1 transition-colors"
+                                title="Edit Attendance Punches"
+                              >
+                                <Pencil size={13} /> Edit
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -917,7 +1060,6 @@ export default function SalarySystem() {
               </div>
             )}
 
-            {/* PAYROLL TAB */}
             {activeTab === 'payroll' && (
               <div className="space-y-6">
                 <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex justify-between items-center">
@@ -973,19 +1115,113 @@ export default function SalarySystem() {
         </div>
       </div>
 
-      {/* ATTENDANCE MODAL */}
+      {selectedEmpForView && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col printable-report text-slate-100">
+            
+            <div className="flex justify-between items-start border-b border-slate-700 pb-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">Official Attendance & Salary Report</span>
+                <h2 className="text-lg font-bold text-white mt-0.5">{selectedEmpForView.name}</h2>
+                <p className="text-xs text-slate-400">Machine Code: <span className="font-semibold text-slate-200">{selectedEmpForView.machineId}</span> | Designation: <span className="font-semibold text-slate-200">{selectedEmpForView.designation || 'N/A'}</span> | Dept: <span className="font-semibold text-slate-200">{selectedEmpForView.dept}</span></p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-bold text-indigo-300">Month: {selectedMonth}</p>
+                <div className="flex items-center gap-2 mt-2 no-print">
+                  <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow flex items-center gap-1.5 transition-colors">
+                    <Printer size={14} /> Print Report
+                  </button>
+                  <button onClick={() => setSelectedEmpForView(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider">Basic Salary</span>
+                <p className="text-sm font-bold text-white mt-0.5">Rs. {Number(selectedEmpForView.salary || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider">Total Absents</span>
+                <p className="text-sm font-bold text-rose-400 mt-0.5">{getCalculationsForAttendance(tempEmpAttendance, selectedEmpForView).absentDays} Days</p>
+              </div>
+              <div className="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider">Late Deductions</span>
+                <p className="text-sm font-bold text-amber-400 mt-0.5">{getCalculationsForAttendance(tempEmpAttendance, selectedEmpForView).totalLateMins} Mins</p>
+              </div>
+              <div className="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider">Net Payable</span>
+                <p className="text-sm font-bold text-emerald-400 mt-0.5">Rs. {getCalculationsForAttendance(tempEmpAttendance, selectedEmpForView).netPayable.toLocaleString()}</p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-1 border border-slate-800 rounded-xl">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-800 text-slate-400 sticky top-0">
+                  <tr>
+                    <th className="p-2.5">Date</th>
+                    <th className="p-2.5">Status</th>
+                    <th className="p-2.5">In Time</th>
+                    <th className="p-2.5">Out Time</th>
+                    <th className="p-2.5 text-right">Late / Remarks</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {Object.keys(tempEmpAttendance).sort().map((dateKey) => {
+                    const punch = tempEmpAttendance[dateKey];
+                    const lateMins = calculateLateMinutes(punch.inTime);
+                    return (
+                      <tr key={dateKey} className="hover:bg-slate-800/30">
+                        <td className="p-2.5 font-medium text-slate-200">{dateKey}</td>
+                        <td className="p-2.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${punch.status === 'P' ? 'bg-emerald-500/10 text-emerald-400' : punch.status === 'A' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                            {punch.status === 'P' ? 'Present' : punch.status === 'A' ? 'Absent' : punch.status === 'L' ? 'Leave' : 'Holiday'}
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-slate-300">{punch.inTime}</td>
+                        <td className="p-2.5 text-slate-300">{punch.outTime}</td>
+                        <td className="p-2.5 text-right">
+                          {lateMins > 0 ? (
+                            <span className="text-rose-400 font-semibold">{lateMins} Mins Late</span>
+                          ) : (
+                            <span className="text-slate-500">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-3 border-t border-slate-700 flex justify-end no-print">
+              <button onClick={() => setSelectedEmpForView(null)} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2 rounded-lg text-xs font-semibold">
+                Close Report
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {selectedEmpForEdit && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+            
+            <div className="flex flex-wrap justify-between items-center border-b border-slate-700 pb-3 gap-2">
               <div>
-                <h3 className="text-sm font-bold text-white">Monthly Attendance - {selectedEmpForEdit.name} (Code: {selectedEmpForEdit.machineId})</h3>
+                <h3 className="text-sm font-bold text-white">Edit Attendance - {selectedEmpForEdit.name} (Code: {selectedEmpForEdit.machineId})</h3>
                 <p className="text-[11px] text-slate-400">Month: {selectedMonth}</p>
               </div>
               
               <div className="flex items-center space-x-2">
                 <button onClick={handleBlankFill} className="bg-indigo-600/80 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-colors">
-                  Blank Fill (Auto)
+                  All Fill
+                </button>
+                <button onClick={handleAllClear} className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-colors">
+                  All Clear
                 </button>
                 <button onClick={() => setSelectedEmpForEdit(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
                   <X size={18} />
@@ -998,7 +1234,7 @@ export default function SalarySystem() {
                 const punch = tempEmpAttendance[dateKey];
                 const lateMins = calculateLateMinutes(punch.inTime);
                 return (
-                  <div key={dateKey} className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/50 text-xs gap-2">
+                  <div key={dateKey} className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-900/65 p-2.5 rounded-lg border border-slate-700/50 text-xs gap-2">
                     <div className="flex items-center space-x-2">
                       <span className="font-medium text-slate-300 w-24">{dateKey}</span>
                       {lateMins > 0 && (
@@ -1048,14 +1284,28 @@ export default function SalarySystem() {
               })}
             </div>
 
-            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-700">
-              <button onClick={() => setSelectedEmpForEdit(null)} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-1.5 rounded-lg text-xs font-semibold">
-                Cancel
-              </button>
-              <button onClick={saveEmpAttendance} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-md">
-                Save Changes
-              </button>
+            <div className="pt-3 border-t border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs">
+              <div className="flex gap-4 text-slate-300">
+                <div>
+                  <span className="text-slate-400">Total Deduction:</span>{' '}
+                  <span className="font-bold text-red-400">Rs. {getCalculationsForAttendance(tempEmpAttendance, selectedEmpForEdit).totalDeduction.toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Net Payable:</span>{' '}
+                  <span className="font-bold text-emerald-400">Rs. {getCalculationsForAttendance(tempEmpAttendance, selectedEmpForEdit).netPayable.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                <button onClick={() => setSelectedEmpForEdit(null)} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-1.5 rounded-lg text-xs font-semibold">
+                  Cancel
+                </button>
+                <button onClick={saveEmpAttendance} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-md">
+                  Save Changes
+                </button>
+              </div>
             </div>
+
           </div>
         </div>
       )}
