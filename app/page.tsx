@@ -80,6 +80,7 @@ export default function SalarySystem() {
 
   useEffect(() => {
     fetchEmployees();
+    fetchShiftRules();
   }, []);
 
   useEffect(() => {
@@ -87,6 +88,21 @@ export default function SalarySystem() {
       fetchAttendanceForMonth(selectedMonth);
     }
   }, [selectedMonth]);
+
+  const fetchShiftRules = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from('shift_rules')
+      .select('*')
+      .eq('month', selectedMonth)
+      .single();
+
+    if (data) {
+      setShiftStartTime(data.start_time || '08:00');
+      setShiftEndTime(data.end_time || '17:00');
+      setGracePeriodMinutes(data.grace_period ?? 15);
+    }
+  };
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -140,6 +156,7 @@ export default function SalarySystem() {
         }
       }));
     }
+    await fetchShiftRules();
   };
 
   const resetEmployeeForm = () => {
@@ -288,6 +305,27 @@ export default function SalarySystem() {
     const endMinutes = endH * 60 + endM;
 
     return inMinutes >= endMinutes && outMinutes <= startMinutes;
+  };
+
+  const handleSaveShiftRules = async () => {
+    if (!supabase) return;
+    const payload = {
+      id: 1,
+      month: selectedMonth,
+      start_time: shiftStartTime,
+      end_time: shiftEndTime,
+      grace_period: gracePeriodMinutes
+    };
+
+    const { error } = await supabase
+      .from('shift_rules')
+      .upsert([payload], { onConflict: 'month' });
+
+    if (error) {
+      alert('Shift rules save karne mein error aa gaya: ' + error.message);
+    } else {
+      alert(`Shift rules successfully updated in Database!\nStart: ${shiftStartTime}, End: ${shiftEndTime}, Grace: ${gracePeriodMinutes}m`);
+    }
   };
 
   const handleRawBiometricUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -580,18 +618,6 @@ export default function SalarySystem() {
     }
   };
 
-  const togglePaidStatus = (machineId: string) => {
-    const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
-    const currentStatus = currentData.paidStatus?.[machineId] || false;
-    setMonthlyRecords({
-      ...monthlyRecords,
-      [selectedMonth]: {
-        ...currentData,
-        paidStatus: { ...currentData.paidStatus, [machineId]: !currentStatus }
-      }
-    });
-  };
-
   const markPayrollPaid = (machineId: string) => {
     const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
     setMonthlyRecords({
@@ -614,7 +640,6 @@ export default function SalarySystem() {
     });
   };
 
-  // Unique departments list for filter dropdown
   const availableDepartments = Array.from(new Set(employees.map(e => e.dept).filter(Boolean))).sort();
 
   const getFilteredEmployees = () => {
@@ -1077,6 +1102,7 @@ export default function SalarySystem() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-xs">
+                    {/* Shift Rules Editable Area with Save/Update Button */}
                     <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg">
                       <Settings size={14} className="text-slate-400" />
                       <span className="text-slate-400">Start:</span>
@@ -1085,6 +1111,12 @@ export default function SalarySystem() {
                       <input type="time" value={shiftEndTime} onChange={e => setShiftEndTime(e.target.value)} className="bg-transparent text-white font-semibold focus:outline-none" />
                       <span className="text-slate-400 ml-2">Grace(m):</span>
                       <input type="number" value={gracePeriodMinutes} onChange={e => setGracePeriodMinutes(Number(e.target.value))} className="w-12 bg-transparent text-white font-semibold focus:outline-none" />
+                      <button 
+                        onClick={handleSaveShiftRules} 
+                        className="ml-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs font-semibold transition-colors shadow"
+                      >
+                        Save / Update
+                      </button>
                     </div>
 
                     <label className="cursor-pointer inline-flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg font-semibold shadow-md transition-colors">
@@ -1235,7 +1267,6 @@ export default function SalarySystem() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
-                      {/* Grand Total Row placed at the top */}
                       <tr className="bg-slate-900/95 border-b-2 border-indigo-500/50 font-bold text-white">
                         <td colSpan={4} className="p-3 text-right text-indigo-300">Grand Total:</td>
                         <td className="p-3 text-indigo-300">Rs. {totalBasicSalary.toLocaleString()}</td>
