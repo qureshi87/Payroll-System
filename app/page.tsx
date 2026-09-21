@@ -39,6 +39,7 @@ interface MonthlyData {
 
 export default function SalarySystem() {
   const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('attendance');
+  const [payrollFilter, setPayrollFilter] = useState<'ALL' | 'UNPAID' | 'PAID'>('UNPAID');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
@@ -477,8 +478,8 @@ export default function SalarySystem() {
   };
 
   const prepareMonthAttendance = (emp: Employee) => {
-    const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
-    const empAtt = monthData.attendance?.[emp.machineId] || {};
+    const monthData: MonthlyData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
+    const empAtt: { [date: string]: DailyPunch } = monthData.attendance?.[emp.machineId] || {};
     
     const [year, month] = selectedMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -591,6 +592,28 @@ export default function SalarySystem() {
     });
   };
 
+  const markPayrollPaid = (machineId: string) => {
+    const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
+    setMonthlyRecords({
+      ...monthlyRecords,
+      [selectedMonth]: {
+        ...currentData,
+        paidStatus: { ...currentData.paidStatus, [machineId]: true }
+      }
+    });
+  };
+
+  const reversePayrollPayment = (machineId: string) => {
+    const currentData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
+    setMonthlyRecords({
+      ...monthlyRecords,
+      [selectedMonth]: {
+        ...currentData,
+        paidStatus: { ...currentData.paidStatus, [machineId]: false }
+      }
+    });
+  };
+
   // Unique departments list for filter dropdown
   const availableDepartments = Array.from(new Set(employees.map(e => e.dept).filter(Boolean))).sort();
 
@@ -653,10 +676,10 @@ export default function SalarySystem() {
   };
 
   const getPayrollSummary = () => {
-    const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
+    const monthData: MonthlyData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
 
     return getFilteredEmployees().filter(e => e.status === 'Active').map((emp) => {
-      const empAtt = monthData.attendance?.[emp.machineId] || {};
+      const empAtt: { [date: string]: DailyPunch } = monthData.attendance?.[emp.machineId] || {};
       const presentDays = Object.values(empAtt).filter(a => a.status === 'P').length;
       const leaveDays = Object.values(empAtt).filter(a => a.status === 'L').length;
       const holidayDays = Object.values(empAtt).filter(a => a.status === 'H').length;
@@ -1152,13 +1175,35 @@ export default function SalarySystem() {
             )}
 
             {activeTab === 'payroll' && (() => {
-              const payrollSummary = getPayrollSummary();
+              const allPayrollSummary = getPayrollSummary();
+              const payrollSummary = allPayrollSummary.filter((item) => {
+                if (payrollFilter === 'PAID') return item.isPaid;
+                if (payrollFilter === 'UNPAID') return !item.isPaid;
+                return true;
+              });
               const totalBasicSalary = payrollSummary.reduce((sum, item) => sum + Math.round(item.basicSalary), 0);
               const totalDeductionSum = payrollSummary.reduce((sum, item) => sum + Math.round(item.deduction), 0);
               const totalNetSalary = payrollSummary.reduce((sum, item) => sum + Math.round(item.netSalary), 0);
+              const paidCount = allPayrollSummary.filter(item => item.isPaid).length;
+              const unpaidCount = allPayrollSummary.filter(item => !item.isPaid).length;
 
               return (
               <div className="space-y-6">
+                <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl shadow-xl">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={() => setPayrollFilter('UNPAID')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${payrollFilter === 'UNPAID' ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-700'}`}>
+                      UNPAID ({unpaidCount})
+                    </button>
+                    <button onClick={() => setPayrollFilter('PAID')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${payrollFilter === 'PAID' ? 'bg-emerald-500 text-slate-950 border-emerald-400' : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-700'}`}>
+                      PAID ({paidCount})
+                    </button>
+                    <button onClick={() => setPayrollFilter('ALL')} className={`px-4 py-2 rounded-lg text-xs font-bold transition-all border ${payrollFilter === 'ALL' ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-700'}`}>
+                      ALL ({allPayrollSummary.length})
+                    </button>
+                    <span className="ml-auto text-[11px] text-slate-400">Selected: <b className="text-white">{payrollFilter}</b></span>
+                  </div>
+                </div>
+
                 <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex justify-between items-center">
                   <div>
                     <h2 className="text-xs font-bold text-white uppercase tracking-wider">
@@ -1211,9 +1256,15 @@ export default function SalarySystem() {
                           <td className="p-2.5 text-rose-400 font-medium">Rs. {Math.round(item.deduction).toLocaleString()}</td>
                           <td className="p-2.5 text-emerald-400 font-bold">Rs. {Math.round(item.netSalary).toLocaleString()}</td>
                           <td className="p-2.5 text-center">
-                            <button onClick={() => togglePaidStatus(item.machineId)} className={`px-2.5 py-1 text-[10px] rounded-full font-bold transition-all ${item.isPaid ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
-                              {item.isPaid ? 'PAID' : 'UNPAID'}
-                            </button>
+                            {item.isPaid ? (
+                              <button onClick={() => reversePayrollPayment(item.machineId)} className="px-2.5 py-1 text-[10px] rounded-full font-bold transition-all bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 inline-flex items-center gap-1" title="Reverse payment and mark as unpaid">
+                                ↩ Reverse
+                              </button>
+                            ) : (
+                              <button onClick={() => markPayrollPaid(item.machineId)} className="px-2.5 py-1 text-[10px] rounded-full font-bold transition-all bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30" title="Mark salary as paid">
+                                MARK PAID
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
