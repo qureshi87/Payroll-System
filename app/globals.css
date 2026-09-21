@@ -26,6 +26,18 @@ body {
 }
 
 /* ==========================================
+   Table Grand Total Styling (Sticky / Top View)
+   ========================================== */
+table tr.grand-total-row, 
+table tr.grand-total {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: rgba(15, 23, 42, 0.95); /* Dark theme background support */
+  font-weight: bold;
+}
+
+/* ==========================================
    A4 Print & PDF Professional Optimization
    ========================================== */
 @media print {

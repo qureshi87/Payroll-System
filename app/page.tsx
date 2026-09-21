@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   Users, Clock, DollarSign, Download, 
-  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Search, Eye, Printer
+  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Search, Eye, Printer, Filter
 } from 'lucide-react';
 import { supabase } from '@/supabaseClient';
 
@@ -45,6 +45,7 @@ export default function SalarySystem() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [employeeIdSearch, setEmployeeIdSearch] = useState<string>('');
   const [employeeNameSearch, setEmployeeNameSearch] = useState<string>('');
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('All');
   const monthInputRef = useRef<HTMLInputElement>(null);
 
   const [shiftStartTime, setShiftStartTime] = useState<string>('08:00');
@@ -214,7 +215,7 @@ export default function SalarySystem() {
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedEmployeeIds(employees.map(emp => emp.id));
+      setSelectedEmployeeIds(getFilteredEmployees().map(emp => emp.id));
     } else {
       setSelectedEmployeeIds([]);
     }
@@ -590,6 +591,9 @@ export default function SalarySystem() {
     });
   };
 
+  // Unique departments list for filter dropdown
+  const availableDepartments = Array.from(new Set(employees.map(e => e.dept).filter(Boolean))).sort();
+
   const getFilteredEmployees = () => {
     const idTerm = employeeIdSearch.trim().toLowerCase();
     const nameTerm = employeeNameSearch.trim().toLowerCase();
@@ -598,8 +602,9 @@ export default function SalarySystem() {
     return employees.filter((e) => {
       const matchesId = !idTerm || e.machineId.toLowerCase().includes(idTerm);
       const matchesName = !nameTerm || e.name.toLowerCase().includes(nameTerm);
+      const matchesDept = selectedDepartment === 'All' || e.dept.toLowerCase() === selectedDepartment.toLowerCase();
       const matchesLegacy = !legacyTerm || e.machineId.toLowerCase().includes(legacyTerm) || e.name.toLowerCase().includes(legacyTerm);
-      return matchesId && matchesName && matchesLegacy;
+      return matchesId && matchesName && matchesDept && matchesLegacy;
     });
   };
 
@@ -621,6 +626,7 @@ export default function SalarySystem() {
   const clearSearchFilters = () => {
     setEmployeeIdSearch('');
     setEmployeeNameSearch('');
+    setSelectedDepartment('All');
     setSearchTerm('');
   };
 
@@ -696,12 +702,13 @@ export default function SalarySystem() {
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
-    doc.text(`Payroll & Attendance Report - ${selectedMonth}`, 14, 15);
+    doc.text(`Payroll & Attendance Report - ${selectedMonth} (${selectedDepartment === 'All' ? 'All Departments' : selectedDepartment})`, 14, 15);
 
     const summary = getPayrollSummary();
     const tableRows = summary.map((item) => [
       item.machineId,
       item.name,
+      item.dept,
       `Rs. ${item.basicSalary.toLocaleString()}`,
       `${item.totalPresentDays}P / ${item.totalLeaves}L / ${item.totalHolidays}H`,
       `${item.totalLateCount} Days (${item.totalLateMinutes} Mins)`,
@@ -711,14 +718,14 @@ export default function SalarySystem() {
     ]);
 
     autoTable(doc, {
-      head: [['Code', 'Name', 'Basic', 'P / L / H', 'Late Days & Mins', 'Deduction', 'Net Salary', 'Status']],
+      head: [['Code', 'Name', 'Dept', 'Basic', 'P / L / H', 'Late Days & Mins', 'Deduction', 'Net Salary', 'Status']],
       body: tableRows,
       startY: 25,
       theme: 'grid',
       headStyles: { fillColor: [15, 23, 42] }
     });
 
-    doc.save(`Payroll_${selectedMonth}.pdf`);
+    doc.save(`Payroll_${selectedMonth}_${selectedDepartment}.pdf`);
   };
 
   return (
@@ -782,17 +789,29 @@ export default function SalarySystem() {
         <div className="bg-slate-800/70 border border-slate-700/70 p-4 rounded-2xl shadow-xl">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
-              <Search className="text-indigo-400" size={17} />
+              <Filter className="text-indigo-400" size={17} />
               <div>
-                <h2 className="text-xs font-bold text-white uppercase tracking-wider">Employee Record Finder</h2>
-                <p className="text-[10px] text-slate-400 mt-0.5">Search by Employee ID, Name and Month to quickly find attendance records.</p>
+                <h2 className="text-xs font-bold text-white uppercase tracking-wider">Department Filter & Employee Search</h2>
+                <p className="text-[10px] text-slate-400 mt-0.5">Filter by Department, Employee ID or Name.</p>
               </div>
             </div>
-            {(employeeIdSearch || employeeNameSearch || searchTerm) && (
-              <button onClick={clearSearchFilters} className="text-[11px] text-slate-400 hover:text-white border border-slate-700 px-2.5 py-1.5 rounded-lg">Clear</button>
+            {(employeeIdSearch || employeeNameSearch || selectedDepartment !== 'All' || searchTerm) && (
+              <button onClick={clearSearchFilters} className="text-[11px] text-slate-400 hover:text-white border border-slate-700 px-2.5 py-1.5 rounded-lg">Clear Filters</button>
             )}
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <label className="block">
+              <span className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Department Filter</span>
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                <select value={selectedDepartment} onChange={(e) => setSelectedDepartment(e.target.value)} className="w-full bg-slate-900/80 border border-slate-700 text-white text-xs rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer">
+                  <option value="All">All Departments</option>
+                  {availableDepartments.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+            </label>
             <label className="block">
               <span className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Employee ID / Machine Code</span>
               <div className="relative">
@@ -804,7 +823,7 @@ export default function SalarySystem() {
               <span className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Employee Name</span>
               <div className="relative">
                 <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                <input type="text" value={employeeNameSearch} onChange={(e) => setEmployeeNameSearch(e.target.value)} placeholder="Search by employee name" className="w-full bg-slate-900/80 border border-slate-700 text-white text-xs rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:border-indigo-500" />
+                <input type="text" value={employeeNameSearch} onChange={(e) => setEmployeeNameSearch(e.target.value)} placeholder="Search by name" className="w-full bg-slate-900/80 border border-slate-700 text-white text-xs rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:border-indigo-500" />
               </div>
             </label>
             <label
@@ -819,7 +838,7 @@ export default function SalarySystem() {
               </div>
             </label>
           </div>
-          {(employeeIdSearch || employeeNameSearch) && (
+          {(employeeIdSearch || employeeNameSearch || selectedDepartment !== 'All') && (
             <div className="mt-4 pt-3 border-t border-slate-700/60">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Matching Employees & Available Months</span>
@@ -833,6 +852,7 @@ export default function SalarySystem() {
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="text-[11px] font-bold text-indigo-300">{emp.machineId}</span>
                         <span className="text-xs font-medium text-white truncate">{emp.name}</span>
+                        <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">{emp.dept}</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {months.length > 0 ? months.map((month) => (
@@ -844,7 +864,7 @@ export default function SalarySystem() {
                     </div>
                   );
                 })}
-                {getFilteredEmployees().length === 0 && <div className="text-center py-3 text-xs text-slate-500">No employee found.</div>}
+                {getFilteredEmployees().length === 0 && <div className="text-center py-3 text-xs text-slate-500">No employee found in this department or search criteria.</div>}
               </div>
             </div>
           )}
@@ -948,7 +968,12 @@ export default function SalarySystem() {
 
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
                   <div className="flex justify-between items-center mb-3">
-                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Employee Directory</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Employee Directory</h3>
+                      <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded-full">
+                        {selectedDepartment === 'All' ? 'All Departments' : selectedDepartment} ({getFilteredEmployees().length})
+                      </span>
+                    </div>
                     {selectedEmployeeIds.length > 0 && (
                       <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md">
                         <span>Delete Selected ({selectedEmployeeIds.length})</span>
@@ -959,7 +984,7 @@ export default function SalarySystem() {
                   {loading ? (
                     <div className="text-center py-6 text-slate-400 text-xs">Loading employees...</div>
                   ) : getFilteredEmployees().length === 0 ? (
-                    <div className="text-center py-6 text-slate-400 text-xs">No employees found.</div>
+                    <div className="text-center py-6 text-slate-400 text-xs">No employees found matching the filter.</div>
                   ) : (
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
@@ -968,7 +993,7 @@ export default function SalarySystem() {
                             <input 
                               type="checkbox" 
                               onChange={handleSelectAll}
-                              checked={employees.length > 0 && selectedEmployeeIds.length === employees.length}
+                              checked={getFilteredEmployees().length > 0 && selectedEmployeeIds.length === getFilteredEmployees().length}
                               className="rounded bg-slate-800 border-slate-700 text-indigo-600 cursor-pointer"
                             />
                           </th>
@@ -997,7 +1022,7 @@ export default function SalarySystem() {
                             <td className="p-2.5 font-bold text-indigo-400">{emp.machineId}</td>
                             <td className="p-2.5 font-medium text-white">{emp.name}</td>
                             <td className="p-2.5">{emp.designation || '-'}</td>
-                            <td className="p-2.5">{emp.dept}</td>
+                            <td className="p-2.5 font-medium text-slate-200">{emp.dept}</td>
                             <td className="p-2.5">{emp.mobile || '-'}</td>
                             <td className="p-2.5">{emp.salaryType}</td>
                             <td className="p-2.5 font-semibold">Rs. {Number(emp.salary || 0).toLocaleString()}</td>
@@ -1076,12 +1101,18 @@ export default function SalarySystem() {
                 )}
 
                 <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">Attendance Dashboard ({selectedMonth})</h3>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Attendance Dashboard ({selectedMonth}) {selectedDepartment !== 'All' ? `- ${selectedDepartment}` : ''}
+                    </h3>
+                    <span className="text-[10px] text-slate-400">Showing {getFilteredEmployees().filter(e => e.status === 'Active').length} active employees</span>
+                  </div>
                   <table className="w-full text-left text-xs text-slate-300">
                     <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
                       <tr>
                         <th className="p-2.5">Machine Code</th>
                         <th className="p-2.5">Name</th>
+                        <th className="p-2.5">Designation</th>
                         <th className="p-2.5">Dept</th>
                         <th className="p-2.5 text-center">Actions (View Report / Edit)</th>
                       </tr>
@@ -1091,7 +1122,8 @@ export default function SalarySystem() {
                         <tr key={emp.id} className="hover:bg-slate-700/30">
                           <td className="p-2.5 font-bold text-indigo-400">{emp.machineId}</td>
                           <td className="p-2.5 font-medium text-white">{emp.name}</td>
-                          <td className="p-2.5">{emp.dept}</td>
+                          <td className="p-2.5">{emp.designation || '-'}</td>
+                          <td className="p-2.5 font-medium text-slate-200">{emp.dept}</td>
                           <td className="p-2.5 text-center">
                             <div className="inline-flex items-center gap-2">
                               <button 
@@ -1119,12 +1151,20 @@ export default function SalarySystem() {
               </div>
             )}
 
-            {activeTab === 'payroll' && (
+            {activeTab === 'payroll' && (() => {
+              const payrollSummary = getPayrollSummary();
+              const totalBasicSalary = payrollSummary.reduce((sum, item) => sum + Math.round(item.basicSalary), 0);
+              const totalDeductionSum = payrollSummary.reduce((sum, item) => sum + Math.round(item.deduction), 0);
+              const totalNetSalary = payrollSummary.reduce((sum, item) => sum + Math.round(item.netSalary), 0);
+
+              return (
               <div className="space-y-6">
                 <div className="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl shadow-xl flex justify-between items-center">
                   <div>
-                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">Payroll Report for {selectedMonth}</h2>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Calculated net salaries mapped strictly to the selected month.</p>
+                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Payroll Report for {selectedMonth} {selectedDepartment !== 'All' ? `(${selectedDepartment})` : ''}
+                    </h2>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Calculated net salaries mapped strictly to the selected department and month.</p>
                   </div>
 
                   <button onClick={exportPDF} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center space-x-1.5 transition-colors">
@@ -1139,6 +1179,8 @@ export default function SalarySystem() {
                       <tr>
                         <th className="p-2.5">Machine Code</th>
                         <th className="p-2.5">Name</th>
+                        <th className="p-2.5">Designation</th>
+                        <th className="p-2.5">Dept</th>
                         <th className="p-2.5">Basic</th>
                         <th className="p-2.5">P / L / H</th>
                         <th className="p-2.5">Late Days & Mins</th>
@@ -1148,10 +1190,21 @@ export default function SalarySystem() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
-                      {getPayrollSummary().map((item) => (
+                      {/* Grand Total Row placed at the top */}
+                      <tr className="bg-slate-900/95 border-b-2 border-indigo-500/50 font-bold text-white">
+                        <td colSpan={4} className="p-3 text-right text-indigo-300">Grand Total:</td>
+                        <td className="p-3 text-indigo-300">Rs. {totalBasicSalary.toLocaleString()}</td>
+                        <td colSpan={2}></td>
+                        <td className="p-3 text-rose-400">Rs. {totalDeductionSum.toLocaleString()}</td>
+                        <td className="p-3 text-emerald-400 text-sm">Rs. {totalNetSalary.toLocaleString()}</td>
+                        <td></td>
+                      </tr>
+                      {payrollSummary.map((item) => (
                         <tr key={item.machineId} className="hover:bg-slate-700/30">
                           <td className="p-2.5 font-bold text-indigo-400">{item.machineId}</td>
                           <td className="p-2.5 font-medium text-white">{item.name}</td>
+                          <td className="p-2.5">{item.designation || '-'}</td>
+                          <td className="p-2.5 font-medium text-slate-200">{item.dept}</td>
                           <td className="p-2.5">Rs. {item.basicSalary.toLocaleString()}</td>
                           <td className="p-2.5">{item.totalPresentDays}P / {item.totalLeaves}L / {item.totalHolidays}H</td>
                           <td className="p-2.5 font-medium text-amber-400">{item.totalLateCount} Days ({item.totalLateMinutes} Mins)</td>
@@ -1168,7 +1221,8 @@ export default function SalarySystem() {
                   </table>
                 </div>
               </div>
-            )}
+            );
+            })()}
 
           </main>
         </div>
