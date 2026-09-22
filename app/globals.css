@@ -43,10 +43,9 @@ table tr.grand-total {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 6mm;
   }
 
-  /* Sirf modal print ho aur baqi app chup jaye */
   body * {
     visibility: hidden !important;
   }
@@ -75,30 +74,38 @@ table tr.grand-total {
     display: none !important;
   }
 
+  /* Scrollable container fix */
+  .printable-report .print-scroll-container,
+  .printable-report div[class*="overflow-y-auto"] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
   /* Summary Cards */
   .printable-report .grid {
     display: flex !important;
-    gap: 8px !important;
-    margin-bottom: 8px !important;
+    gap: 6px !important;
+    margin-bottom: 6px !important;
   }
 
   .printable-report .grid > div {
     flex: 1 !important;
     background: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
-    padding: 6px !important;
+    padding: 5px !important;
   }
 
-  /* Table styling for single-page 31 rows fit */
+  /* Table styling for single-page fit */
   .printable-report table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 9.5px !important;
+    font-size: 9px !important;
   }
 
   .printable-report th, 
   .printable-report td {
-    padding: 4px 6px !important;
+    padding: 3px 5px !important;
     border: 1px solid #475569 !important;
     color: #000000 !important;
   }
