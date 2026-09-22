@@ -1,96 +1,122 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ==========================================
+   Table Grand Total Styling (Sticky / Top View)
+   ========================================== */
+table tr.grand-total-row, 
+table tr.grand-total {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: rgba(15, 23, 42, 0.95);
+  font-weight: bold;
+}
+
+/* ==========================================
+   Professional A4 Print Optimization for Report Modal
+   ========================================== */
 @media print {
   @page {
     size: A4 portrait;
-    margin: 5mm; /* Margins kam kar di hain taake poora data fit ho jaye */
+    margin: 8mm;
   }
 
-  html, body {
-    background: #ffffff !important;
-    color: #000000 !important;
-    font-size: 9px !important; /* Font size chota kiya hai */
-    line-height: 1.1 !important;
-    width: 100% !important;
-    height: 100% !important;
-    overflow: hidden !important; /* Extra pages rokne ke liye */
-    margin: 0 !important;
-    padding: 0 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
+  /* Sirf modal print ho aur baqi app chup jaye */
   body * {
-    visibility: hidden;
+    visibility: hidden !important;
   }
 
-  .printable-report, .printable-report *, #printable-area, #printable-area * {
-    visibility: visible;
+  .printable-report, .printable-report * {
+    visibility: visible !important;
   }
 
-  .printable-report, #printable-area {
-    position: absolute !important;
+  .printable-report {
+    position: fixed !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
-    height: 100% !important;
-    max-height: 100vh !important;
-    margin: 0 !important;
-    padding: 2px !important;
+    height: auto !important;
+    max-height: none !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
-    border-radius: 0 !important;
-    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    z-index: 999999 !important;
   }
 
-  .no-print, nav, header, aside, button, .sidebar {
+  .no-print {
     display: none !important;
   }
 
-  /* Summary cards tight spacing */
-  .grid, [class*="grid-cols"] {
+  /* Summary Cards */
+  .printable-report .grid {
     display: flex !important;
-    gap: 4px !important;
-    margin-bottom: 4px !important;
-    width: 100% !important;
+    gap: 8px !important;
+    margin-bottom: 8px !important;
   }
 
-  .grid > div {
+  .printable-report .grid > div {
     flex: 1 !important;
     background: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
-    padding: 3px !important;
+    padding: 6px !important;
   }
 
-  /* Table aur rows ki padding kam ki hai taake 31 rows aik page par aa sakein */
-  table {
+  /* Table styling for single-page 31 rows fit */
+  .printable-report table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 8.5px !important;
-    margin-top: 2px !important;
+    font-size: 9.5px !important;
   }
 
-  th, td {
-    padding: 2px 4px !important;
+  .printable-report th, 
+  .printable-report td {
+    padding: 4px 6px !important;
     border: 1px solid #475569 !important;
-    text-align: left !important;
     color: #000000 !important;
   }
 
-  thead {
-    display: table-header-group;
+  .printable-report thead {
     background-color: #1e293b !important;
     color: #ffffff !important;
+    display: table-header-group;
   }
 
-  thead th {
+  .printable-report thead th {
     background-color: #1e293b !important;
     color: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  tr {
+  .printable-report tr {
     page-break-inside: avoid;
     break-inside: avoid;
   }
