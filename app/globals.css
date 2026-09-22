@@ -43,7 +43,7 @@ table tr.grand-total {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 6mm;
+    margin: 4mm 6mm !important; /* Margins bilkul kam kar di hain */
   }
 
   body * {
@@ -55,7 +55,7 @@ table tr.grand-total {
   }
 
   .printable-report {
-    position: fixed !important;
+    position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
@@ -68,46 +68,59 @@ table tr.grand-total {
     padding: 0 !important;
     margin: 0 !important;
     z-index: 999999 !important;
+    overflow: visible !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  /* Scrollable container fix */
+  /* Scrollable containers aur flex overflow khatam */
   .printable-report .print-scroll-container,
-  .printable-report div[class*="overflow-y-auto"] {
+  .printable-report div[class*="overflow-"] {
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
   }
 
-  /* Summary Cards */
+  /* Top Header aur Summary Cards ko compact kiya hai */
+  .printable-report h1, .printable-report h2, .printable-report h3 {
+    font-size: 11px !important;
+    margin-bottom: 2px !important;
+    margin-top: 0 !important;
+  }
+
+  .printable-report p, .printable-report span {
+    font-size: 8.5px !important;
+  }
+
   .printable-report .grid {
     display: flex !important;
-    gap: 6px !important;
-    margin-bottom: 6px !important;
+    gap: 4px !important;
+    margin-bottom: 4px !important;
   }
 
   .printable-report .grid > div {
     flex: 1 !important;
     background: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
-    padding: 5px !important;
+    padding: 3px 6px !important;
   }
 
-  /* Table styling for single-page fit */
+  /* Table ko tight kiya hai taake 31 rows araam se fit ho jayein */
   .printable-report table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 9px !important;
+    font-size: 8px !important; /* Font size mazeed chota kiya hai */
+    margin-top: 2px !important;
   }
 
   .printable-report th, 
   .printable-report td {
-    padding: 3px 5px !important;
+    padding: 2px 4px !important; /* Row ki height kam ki hai */
     border: 1px solid #475569 !important;
     color: #000000 !important;
+    line-height: 1.1 !important;
   }
 
   .printable-report thead {
@@ -121,6 +134,7 @@ table tr.grand-total {
     color: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    padding: 3px 4px !important;
   }
 
   .printable-report tr {
