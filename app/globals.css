@@ -33,7 +33,7 @@ table tr.grand-total {
   position: sticky;
   top: 0;
   z-index: 10;
-  background-color: rgba(15, 23, 42, 0.95); /* Dark theme background support */
+  background-color: rgba(15, 23, 42, 0.95);
   font-weight: bold;
 }
 
@@ -43,14 +43,14 @@ table tr.grand-total {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 10mm;
+    margin: 8mm;
   }
 
   html, body {
     background: #ffffff !important;
     color: #000000 !important;
-    font-size: 11px !important;
-    line-height: 1.2 !important;
+    font-size: 10px !important;
+    line-height: 1.15 !important;
     width: 100% !important;
     height: auto !important;
     overflow: visible !important;
@@ -64,33 +64,36 @@ table tr.grand-total {
     visibility: hidden;
   }
 
-  #printable-area, #printable-area * {
+  .printable-report, .printable-report *, #printable-area, #printable-area * {
     visibility: visible;
   }
 
-  #printable-area {
+  .printable-report, #printable-area {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 5px !important;
     background: #ffffff !important;
+    color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   .no-print, nav, header, aside, button, .sidebar {
     display: none !important;
   }
 
-  /* Summary cards and tables full width formatting */
+  /* Summary cards formatting */
   .grid, [class*="grid-cols"] {
     display: flex !important;
-    gap: 10px !important;
-    margin-bottom: 12px !important;
+    gap: 8px !important;
+    margin-bottom: 8px !important;
     width: 100% !important;
   }
 
@@ -98,20 +101,29 @@ table tr.grand-total {
     flex: 1 !important;
     background: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
-    padding: 8px !important;
+    padding: 6px !important;
+  }
+
+  /* Scroll container fix for print */
+  .print-scroll-container {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
   }
 
   table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 10px !important;
-    margin-top: 8px !important;
+    font-size: 9.5px !important;
+    margin-top: 6px !important;
+    page-break-inside: auto !important;
   }
 
   th, td {
-    padding: 5px 8px !important;
-    border: 1px solid #475569 !important;
+    padding: 4px 6px !important;
+    border: 1px solid #334155 !important;
     text-align: left !important;
+    color: #000000 !important;
   }
 
   thead {
@@ -123,10 +135,20 @@ table tr.grand-total {
   thead th {
     background-color: #1e293b !important;
     color: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   tr {
     page-break-inside: avoid;
     break-inside: avoid;
+  }
+
+  input, select {
+    border: none !important;
+    background: transparent !important;
+    color: black !important;
+    appearance: none;
+    padding: 0 !important;
   }
 }
