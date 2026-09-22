@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   Users, Clock, DollarSign, Download, 
-  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Search, Eye, Printer, Filter
+  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Eye, Printer, Filter
 } from 'lucide-react';
 import { supabase } from '@/supabaseClient';
 
@@ -78,20 +78,9 @@ export default function SalarySystem() {
     status: 'Active' as Employee['status']
   });
 
-  useEffect(() => {
-    fetchEmployees();
-    fetchShiftRules();
-  }, []);
-
-  useEffect(() => {
-    if (selectedMonth) {
-      fetchAttendanceForMonth(selectedMonth);
-    }
-  }, [selectedMonth]);
-
   const fetchShiftRules = async () => {
     if (!supabase) return;
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('shift_rules')
       .select('*')
       .eq('month', selectedMonth)
@@ -158,6 +147,17 @@ export default function SalarySystem() {
     }
     await fetchShiftRules();
   };
+
+  useEffect(() => {
+    fetchEmployees();
+    fetchShiftRules();
+  }, []);
+
+  useEffect(() => {
+    if (selectedMonth) {
+      fetchAttendanceForMonth(selectedMonth);
+    }
+  }, [selectedMonth]);
 
   const resetEmployeeForm = () => {
     setEditingEmployeeId(null);
@@ -310,7 +310,6 @@ export default function SalarySystem() {
   const handleSaveShiftRules = async () => {
     if (!supabase) return;
     const payload = {
-      id: 1,
       month: selectedMonth,
       start_time: shiftStartTime,
       end_time: shiftEndTime,
@@ -446,12 +445,40 @@ export default function SalarySystem() {
       setMonthlyRecords(updatedMonthlyRecords);
       setAllLogsPreview(parsedPreview);
 
+      if (supabase) {
+        const attendancePayloads: Array<{ machine_id: string; month: string; attendance_data: any; updated_at: string }> = [];
+        
+        Object.keys(updatedMonthlyRecords).forEach((mKey) => {
+          const monthAttMap = updatedMonthlyRecords[mKey].attendance;
+          Object.keys(monthAttMap).forEach((mId) => {
+            attendancePayloads.push({
+              machine_id: mId,
+              month: mKey,
+              attendance_data: monthAttMap[mId],
+              updated_at: new Date().toISOString(),
+            });
+          });
+        });
+
+        if (attendancePayloads.length > 0) {
+          const { error } = await supabase
+            .from('attendance')
+            .upsert(attendancePayloads, { onConflict: 'machine_id,month' });
+
+          if (error) {
+            console.error('Error saving uploaded biometric logs to Supabase:', error.message);
+            alert('Logs parse ho gaye hain lekin database me save karne me error aaya hai: ' + error.message);
+            return;
+          }
+        }
+      }
+
       const firstMonth = Array.from(affectedMonths)[0];
       if (firstMonth) {
         setSelectedMonth(firstMonth);
       }
 
-      alert(`Biometric Machine Logs Processed Successfully for month(s): ${Array.from(affectedMonths).join(', ')}!`);
+      alert(`Biometric Machine Logs Processed and Saved Successfully for month(s): ${Array.from(affectedMonths).join(', ')}!`);
     };
 
     reader.readAsText(file);
@@ -1102,7 +1129,6 @@ export default function SalarySystem() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-xs">
-                    {/* Shift Rules Editable Area with Save/Update Button */}
                     <div className="flex items-center space-x-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg">
                       <Settings size={14} className="text-slate-400" />
                       <span className="text-slate-400">Start:</span>
