@@ -43,9 +43,10 @@ table tr.grand-total {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 4mm 6mm !important; /* Margins bilkul kam kar di hain */
+    margin: 10mm;
   }
 
+  /* Sirf modal print ho aur baqi app chup jaye */
   body * {
     visibility: hidden !important;
   }
@@ -55,27 +56,23 @@ table tr.grand-total {
   }
 
   .printable-report {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    display: block !important;
     width: 100% !important;
-    height: auto !important;
-    max-height: none !important;
+    max-width: 100% !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    z-index: 999999 !important;
-    overflow: visible !important;
+    position: static !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  /* Scrollable containers aur flex overflow khatam */
+  /* Scrollable container fix */
   .printable-report .print-scroll-container,
   .printable-report div[class*="overflow-"] {
     overflow: visible !important;
@@ -83,44 +80,35 @@ table tr.grand-total {
     height: auto !important;
   }
 
-  /* Top Header aur Summary Cards ko compact kiya hai */
-  .printable-report h1, .printable-report h2, .printable-report h3 {
-    font-size: 11px !important;
-    margin-bottom: 2px !important;
-    margin-top: 0 !important;
-  }
-
-  .printable-report p, .printable-report span {
-    font-size: 8.5px !important;
-  }
-
+  /* Summary Cards */
   .printable-report .grid {
     display: flex !important;
-    gap: 4px !important;
-    margin-bottom: 4px !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+    width: 100% !important;
   }
 
   .printable-report .grid > div {
     flex: 1 !important;
     background: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
-    padding: 3px 6px !important;
+    padding: 6px 8px !important;
   }
 
-  /* Table ko tight kiya hai taake 31 rows araam se fit ho jayein */
+  /* Clean Table Styling */
   .printable-report table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 8px !important; /* Font size mazeed chota kiya hai */
-    margin-top: 2px !important;
+    font-size: 9.5px !important;
+    margin-top: 5px !important;
   }
 
   .printable-report th, 
   .printable-report td {
-    padding: 2px 4px !important; /* Row ki height kam ki hai */
+    padding: 5px 8px !important;
     border: 1px solid #475569 !important;
     color: #000000 !important;
-    line-height: 1.1 !important;
+    text-align: left !important;
   }
 
   .printable-report thead {
@@ -134,7 +122,6 @@ table tr.grand-total {
     color: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    padding: 3px 4px !important;
   }
 
   .printable-report tr {
