@@ -805,36 +805,6 @@ export default function SalarySystem() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans antialiased">
-      
-      <style jsx global>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          .printable-report, .printable-report * {
-            visibility: visible;
-          }
-          .printable-report {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white !important;
-            color: black !important;
-            padding: 20px;
-          }
-          .no-print {
-            display: none !important;
-          }
-          input, select {
-            border: none !important;
-            background: transparent !important;
-            color: black !important;
-            appearance: none;
-            padding: 0 !important;
-          }
-        }
-      `}</style>
 
       <div className="max-w-7xl mx-auto space-y-6">
         
@@ -1338,7 +1308,7 @@ export default function SalarySystem() {
 
       {selectedEmpForView && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col printable-report text-slate-100">
+          <div id="printable-area" className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col printable-report text-slate-100">
             
             <div className="flex justify-between items-start border-b border-slate-700 pb-4">
               <div>
@@ -1378,7 +1348,7 @@ export default function SalarySystem() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-1 border border-slate-800 rounded-xl">
+            <div className="flex-1 overflow-y-auto pr-1 border border-slate-800 rounded-xl print-scroll-container">
               <table className="w-full text-left text-xs text-slate-300">
                 <thead className="bg-slate-800 text-slate-400 sticky top-0">
                   <tr>
