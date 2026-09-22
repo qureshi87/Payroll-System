@@ -1,59 +1,17 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-/* ==========================================
-   Table Grand Total Styling (Sticky / Top View)
-   ========================================== */
-table tr.grand-total-row, 
-table tr.grand-total {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background-color: rgba(15, 23, 42, 0.95);
-  font-weight: bold;
-}
-
-/* ==========================================
-   A4 Print & PDF Professional Optimization
-   ========================================== */
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 5mm; /* Margins kam kar di hain taake poora data fit ho jaye */
   }
 
   html, body {
     background: #ffffff !important;
     color: #000000 !important;
-    font-size: 10px !important;
-    line-height: 1.15 !important;
+    font-size: 9px !important; /* Font size chota kiya hai */
+    line-height: 1.1 !important;
     width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
+    height: 100% !important;
+    overflow: hidden !important; /* Extra pages rokne ke liye */
     margin: 0 !important;
     padding: 0 !important;
     -webkit-print-color-adjust: exact;
@@ -73,15 +31,15 @@ table tr.grand-total {
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
-    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100vh !important;
     margin: 0 !important;
-    padding: 5px !important;
+    padding: 2px !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
-    max-height: none !important;
     overflow: visible !important;
   }
 
@@ -89,11 +47,11 @@ table tr.grand-total {
     display: none !important;
   }
 
-  /* Summary cards formatting */
+  /* Summary cards tight spacing */
   .grid, [class*="grid-cols"] {
     display: flex !important;
-    gap: 8px !important;
-    margin-bottom: 8px !important;
+    gap: 4px !important;
+    margin-bottom: 4px !important;
     width: 100% !important;
   }
 
@@ -101,27 +59,20 @@ table tr.grand-total {
     flex: 1 !important;
     background: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
-    padding: 6px !important;
+    padding: 3px !important;
   }
 
-  /* Scroll container fix for print */
-  .print-scroll-container {
-    overflow: visible !important;
-    max-height: none !important;
-    height: auto !important;
-  }
-
+  /* Table aur rows ki padding kam ki hai taake 31 rows aik page par aa sakein */
   table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 9.5px !important;
-    margin-top: 6px !important;
-    page-break-inside: auto !important;
+    font-size: 8.5px !important;
+    margin-top: 2px !important;
   }
 
   th, td {
-    padding: 4px 6px !important;
-    border: 1px solid #334155 !important;
+    padding: 2px 4px !important;
+    border: 1px solid #475569 !important;
     text-align: left !important;
     color: #000000 !important;
   }
@@ -142,13 +93,5 @@ table tr.grand-total {
   tr {
     page-break-inside: avoid;
     break-inside: avoid;
-  }
-
-  input, select {
-    border: none !important;
-    background: transparent !important;
-    color: black !important;
-    appearance: none;
-    padding: 0 !important;
   }
 }
