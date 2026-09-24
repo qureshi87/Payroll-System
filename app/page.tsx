@@ -1306,18 +1306,167 @@ export default function SalarySystem() {
         </div>
       </div>
 
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 7mm;
+          }
+
+          html, body {
+            width: 100% !important;
+            min-height: 0 !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            overflow: visible !important;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+
+          #printable-area,
+          #printable-area * {
+            visibility: visible !important;
+          }
+
+          #printable-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            background: #fff !important;
+            color: #111827 !important;
+            display: block !important;
+            overflow: visible !important;
+          }
+
+          #printable-area .no-print {
+            display: none !important;
+          }
+
+          #printable-area .print-scroll-container {
+            display: block !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            border: 1px solid #334155 !important;
+            border-radius: 3px !important;
+          }
+
+          #printable-area .printable-report-header {
+            color: #111827 !important;
+          }
+
+          #printable-area .printable-report-header span,
+          #printable-area .printable-report-header p {
+            color: #374151 !important;
+          }
+
+          #printable-area .printable-report-header h2 {
+            color: #111827 !important;
+          }
+
+          #printable-area table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            table-layout: fixed !important;
+            font-size: 7.5pt !important;
+          }
+
+          #printable-area thead {
+            display: table-header-group !important;
+          }
+
+          #printable-area tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          #printable-area th,
+          #printable-area td {
+            padding: 2.2px 4px !important;
+            line-height: 1.15 !important;
+            color: #111827 !important;
+            border-bottom: 1px solid #cbd5e1 !important;
+            white-space: nowrap !important;
+          }
+
+          #printable-area th {
+            background: #e5e7eb !important;
+            color: #111827 !important;
+            font-weight: 700 !important;
+          }
+
+          #printable-area td span {
+            background: transparent !important;
+            color: #111827 !important;
+            border: 0 !important;
+            padding: 0 !important;
+          }
+
+          #printable-area > div {
+            margin-bottom: 0 !important;
+          }
+
+          #printable-area .grid {
+            gap: 4px !important;
+            margin-bottom: 6px !important;
+          }
+
+          #printable-area .grid > div {
+            padding: 4px 6px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 3px !important;
+            background: #f8fafc !important;
+          }
+
+          #printable-area .grid span,
+          #printable-area .grid p {
+            color: #111827 !important;
+          }
+
+          #printable-area .printable-report-header {
+            padding-bottom: 5px !important;
+            margin-bottom: 6px !important;
+            border-bottom: 1px solid #334155 !important;
+          }
+
+          #printable-area .printable-report-title {
+            font-size: 13pt !important;
+            line-height: 1.1 !important;
+          }
+
+          #printable-area .printable-report-month {
+            font-size: 8pt !important;
+          }
+        }
+      `}</style>
+
       {selectedEmpForView && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div id="print-modal" className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div id="printable-area" className="bg-slate-900 border border-slate-700 w-full max-w-3xl rounded-2xl p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col printable-report text-slate-100">
             
-            <div className="flex justify-between items-start border-b border-slate-700 pb-4">
+            <div className="flex justify-between items-start border-b border-slate-700 pb-4 printable-report-header">
               <div>
                 <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">Official Attendance & Salary Report</span>
-                <h2 className="text-lg font-bold text-white mt-0.5">{selectedEmpForView.name}</h2>
-                <p className="text-xs text-slate-400">Machine Code: <span className="font-semibold text-slate-200">{selectedEmpForView.machineId}</span> | Designation: <span className="font-semibold text-slate-200">{selectedEmpForView.designation || 'N/A'}</span> | Dept: <span className="font-semibold text-slate-200">{selectedEmpForView.dept}</span></p>
+                <p className="text-[9px] uppercase font-semibold text-slate-400 tracking-wider mt-1">Employee Name</p>
+                <h2 className="text-lg font-bold text-white mt-0.5 printable-report-title">{selectedEmpForView.name}</h2>
+                <p className="text-xs text-slate-400">Employee ID / Machine Code: <span className="font-semibold text-slate-200">{selectedEmpForView.machineId}</span> | Designation: <span className="font-semibold text-slate-200">{selectedEmpForView.designation || 'N/A'}</span> | Dept: <span className="font-semibold text-slate-200">{selectedEmpForView.dept}</span></p>
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold text-indigo-300">Month: {selectedMonth}</p>
+                <p className="text-xs font-bold text-indigo-300 printable-report-month">Month: {formatMonthLabel(selectedMonth)}</p>
                 <div className="flex items-center gap-2 mt-2 no-print">
                   <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow flex items-center gap-1.5 transition-colors">
                     <Printer size={14} /> Print Report
