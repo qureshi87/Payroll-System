@@ -43,7 +43,7 @@ table tr.grand-total {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 4mm;
   }
 
   /* Body ko hide karein taake baqi app print mein na aaye */
@@ -66,16 +66,18 @@ table tr.grand-total {
     background: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 2px !important;
     box-shadow: none !important;
     border: none !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  /* Scrollable container fix */
+  /* Scrollable container fix to prevent page splitting */
   .printable-report .print-scroll-container,
   .printable-report div[class*="overflow-"] {
     overflow: visible !important;
@@ -86,29 +88,40 @@ table tr.grand-total {
   /* Summary Cards Grid */
   .printable-report .grid {
     display: flex !important;
-    gap: 6px !important;
-    margin-bottom: 6px !important;
+    gap: 4px !important;
+    margin-bottom: 4px !important;
   }
 
   .printable-report .grid > div {
     flex: 1 !important;
     background: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
-    padding: 4px 6px !important;
+    padding: 3px 4px !important;
   }
 
-  /* Table styling for perfect fit */
+  .printable-report .grid span {
+    font-size: 6.5px !important;
+  }
+
+  .printable-report .grid p {
+    font-size: 8.5px !important;
+  }
+
+  /* Table styling for perfect single page fit */
   .printable-report table {
     width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 8.5px !important;
+    font-size: 7px !important;
+    table-layout: fixed !important;
   }
 
   .printable-report th, 
   .printable-report td {
-    padding: 3px 5px !important;
-    border: 1px solid #475569 !important;
+    padding: 1.5px 3px !important;
+    border: 1px solid #94a3b8 !important;
     color: #000000 !important;
+    white-space: nowrap !important;
+    line-height: 1.1 !important;
   }
 
   .printable-report thead {
