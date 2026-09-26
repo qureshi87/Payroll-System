@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { 
   Users, Clock, DollarSign, Download, 
-  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Eye, Filter
+  Calendar, Save, X, Upload, Settings, Cpu, ChevronRight, ChevronLeft, UserPlus, Pencil, Eye, Filter, Printer
 } from 'lucide-react';
 import { supabase } from '@/supabaseClient';
 
@@ -1468,6 +1468,9 @@ export default function SalarySystem() {
               <div className="text-right">
                 <p className="text-xs font-bold text-indigo-300 printable-report-month">Month: {formatMonthLabel(selectedMonth)}</p>
                 <div className="flex items-center gap-2 mt-2 no-print">
+                  <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg text-xs font-semibold shadow flex items-center gap-1">
+                    <Printer size={13} /> Print
+                  </button>
                   <button onClick={() => setSelectedEmpForView(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
                     <X size={18} />
                   </button>
@@ -1533,7 +1536,10 @@ export default function SalarySystem() {
               </table>
             </div>
 
-            <div className="pt-3 border-t border-slate-700 flex justify-end no-print">
+            <div className="pt-3 border-t border-slate-700 flex justify-between items-center no-print">
+              <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow">
+                <Printer size={14} /> Print Report
+              </button>
               <button onClick={() => setSelectedEmpForView(null)} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2 rounded-lg text-xs font-semibold">
                 Close Report
               </button>
