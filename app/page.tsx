@@ -1310,16 +1310,17 @@ export default function SalarySystem() {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 7mm;
+            margin: 6mm;
           }
 
-          html, body {
+          html,
+          body {
             width: 100% !important;
             min-height: 0 !important;
             height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
-            background: #fff !important;
+            background: #ffffff !important;
             overflow: visible !important;
           }
 
@@ -1346,10 +1347,11 @@ export default function SalarySystem() {
             border: 0 !important;
             border-radius: 0 !important;
             box-shadow: none !important;
-            background: #fff !important;
+            background: #ffffff !important;
             color: #111827 !important;
             display: block !important;
             overflow: visible !important;
+            font-family: Arial, Helvetica, sans-serif !important;
           }
 
           #printable-area .no-print {
@@ -1361,28 +1363,77 @@ export default function SalarySystem() {
             overflow: visible !important;
             max-height: none !important;
             height: auto !important;
-            border: 1px solid #334155 !important;
-            border-radius: 3px !important;
+            border: 1px solid #94a3b8 !important;
+            border-radius: 4px !important;
           }
 
           #printable-area .printable-report-header {
+            padding: 0 0 4px 0 !important;
+            margin: 0 0 5px 0 !important;
+            border-bottom: 1.5px solid #1e293b !important;
             color: #111827 !important;
           }
 
           #printable-area .printable-report-header span,
           #printable-area .printable-report-header p {
-            color: #374151 !important;
+            color: #475569 !important;
           }
 
           #printable-area .printable-report-header h2 {
-            color: #111827 !important;
+            color: #0f172a !important;
+          }
+
+          #printable-area .printable-report-title {
+            font-size: 14pt !important;
+            line-height: 1.05 !important;
+            margin: 0 !important;
+          }
+
+          #printable-area .printable-report-month {
+            color: #3730a3 !important;
+            font-size: 9pt !important;
+            font-weight: 700 !important;
+          }
+
+          #printable-area > div {
+            margin-bottom: 0 !important;
+          }
+
+          #printable-area .grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 3px !important;
+            margin: 0 0 5px 0 !important;
+          }
+
+          #printable-area .grid > div {
+            padding: 3px 5px !important;
+            min-height: 0 !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 3px !important;
+            background: #f8fafc !important;
+          }
+
+          #printable-area .grid span {
+            display: block !important;
+            color: #64748b !important;
+            font-size: 6.5pt !important;
+            line-height: 1 !important;
+          }
+
+          #printable-area .grid p {
+            color: #0f172a !important;
+            font-size: 8.5pt !important;
+            line-height: 1.05 !important;
+            margin: 1px 0 0 0 !important;
           }
 
           #printable-area table {
             width: 100% !important;
             border-collapse: collapse !important;
             table-layout: fixed !important;
-            font-size: 7.5pt !important;
+            font-size: 7.2pt !important;
+            margin: 0 !important;
           }
 
           #printable-area thead {
@@ -1396,17 +1447,21 @@ export default function SalarySystem() {
 
           #printable-area th,
           #printable-area td {
-            padding: 2.2px 4px !important;
-            line-height: 1.15 !important;
+            padding: 2px 4px !important;
+            height: 4.6mm !important;
+            line-height: 1 !important;
             color: #111827 !important;
-            border-bottom: 1px solid #cbd5e1 !important;
+            border-bottom: 1px solid #dbe2ea !important;
             white-space: nowrap !important;
+            vertical-align: middle !important;
           }
 
           #printable-area th {
-            background: #e5e7eb !important;
-            color: #111827 !important;
+            height: 5mm !important;
+            background: #e2e8f0 !important;
+            color: #0f172a !important;
             font-weight: 700 !important;
+            border-bottom: 1.2px solid #64748b !important;
           }
 
           #printable-area td span {
@@ -1414,44 +1469,18 @@ export default function SalarySystem() {
             color: #111827 !important;
             border: 0 !important;
             padding: 0 !important;
+            font-size: inherit !important;
           }
 
-          #printable-area > div {
-            margin-bottom: 0 !important;
-          }
-
-          #printable-area .grid {
-            gap: 4px !important;
-            margin-bottom: 6px !important;
-          }
-
-          #printable-area .grid > div {
-            padding: 4px 6px !important;
-            border: 1px solid #cbd5e1 !important;
-            border-radius: 3px !important;
+          #printable-area tbody tr:nth-child(even) {
             background: #f8fafc !important;
           }
 
-          #printable-area .grid span,
-          #printable-area .grid p {
-            color: #111827 !important;
-          }
-
-          #printable-area .printable-report-header {
-            padding-bottom: 5px !important;
-            margin-bottom: 6px !important;
-            border-bottom: 1px solid #334155 !important;
-          }
-
-          #printable-area .printable-report-title {
-            font-size: 13pt !important;
-            line-height: 1.1 !important;
-          }
-
-          #printable-area .printable-report-month {
-            font-size: 8pt !important;
+          #printable-area tbody tr:nth-child(odd) {
+            background: #ffffff !important;
           }
         }
+
       `}</style>
 
       {selectedEmpForView && (
@@ -1468,8 +1497,14 @@ export default function SalarySystem() {
               <div className="text-right">
                 <p className="text-xs font-bold text-indigo-300 printable-report-month">Month: {formatMonthLabel(selectedMonth)}</p>
                 <div className="flex items-center gap-2 mt-2 no-print">
-                  <button onClick={() => window.print()} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow flex items-center gap-1.5 transition-colors">
-                    <Printer size={14} /> Print Report
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md inline-flex items-center gap-1.5 transition-colors"
+                    title="Print complete monthly report on one A4 page"
+                  >
+                    <Printer size={14} />
+                    <span>Print Report</span>
                   </button>
                   <button onClick={() => setSelectedEmpForView(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
                     <X size={18} />
