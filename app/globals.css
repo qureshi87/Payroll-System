@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+  --font-mono: var(--font-geist-mono, monospace);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -20,9 +20,9 @@
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* ==========================================
@@ -46,13 +46,11 @@ table tr.grand-total {
     margin: 4mm;
   }
 
-  /* Body ko hide karein taake baqi app print mein na aaye */
   body {
     visibility: hidden !important;
-    background: #ffffff !important;
+    background-color: #ffffff !important;
   }
 
-  /* Sirf report aur uske andar ka content visible ho */
   .printable-report, 
   .printable-report * {
     visibility: visible !important;
@@ -63,21 +61,20 @@ table tr.grand-total {
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
-    background: #ffffff !important;
+    background-color: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 2px !important;
     box-shadow: none !important;
     border: none !important;
-    max-height: 100vh !important;
-    overflow: hidden !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  /* Scrollable container fix to prevent page splitting */
   .printable-report .print-scroll-container,
   .printable-report div[class*="overflow-"] {
     overflow: visible !important;
@@ -85,7 +82,6 @@ table tr.grand-total {
     height: auto !important;
   }
 
-  /* Summary Cards Grid */
   .printable-report .grid {
     display: flex !important;
     gap: 4px !important;
@@ -94,7 +90,7 @@ table tr.grand-total {
 
   .printable-report .grid > div {
     flex: 1 !important;
-    background: #f8fafc !important;
+    background-color: #f8fafc !important;
     border: 1px solid #cbd5e1 !important;
     padding: 3px 4px !important;
   }
@@ -107,7 +103,6 @@ table tr.grand-total {
     font-size: 8.5px !important;
   }
 
-  /* Table styling for perfect single page fit */
   .printable-report table {
     width: 100% !important;
     border-collapse: collapse !important;
