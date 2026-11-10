@@ -52,7 +52,9 @@ table tr.grand-total {
   }
 
   .printable-report, 
-  .printable-report * {
+  .printable-report *,
+  .printable-employee-list,
+  .printable-employee-list * {
     visibility: visible !important;
   }
 
@@ -69,6 +71,58 @@ table tr.grand-total {
     border: none !important;
     max-height: none !important;
     overflow: visible !important;
+  }
+
+  @page employee-directory {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  .printable-employee-list {
+    page: employee-directory;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+  }
+
+  .printable-employee-list div[class*="overflow-"] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  .printable-employee-list table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 9pt !important;
+  }
+
+  .printable-employee-list th,
+  .printable-employee-list td {
+    padding: 5px !important;
+    border: 1px solid #94a3b8 !important;
+    color: #000000 !important;
+  }
+
+  .printable-employee-list thead {
+    display: table-header-group;
+    background: #e2e8f0 !important;
+  }
+
+  .printable-employee-list tr {
+    break-inside: avoid;
+  }
+
+  html[data-print-selected-only="true"] .printable-employee-list tbody tr:not([data-selected-for-print="true"]) {
+    display: none !important;
   }
 
   .no-print {

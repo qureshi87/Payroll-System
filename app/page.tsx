@@ -65,6 +65,7 @@ const loadEmployees = async (): Promise<Employee[] | null> => {
 const SHIFT_SETTINGS_KEY = 'salary-system-shift-settings';
 const ATTENDANCE_STORAGE_KEY = 'salary-system-monthly-records';
 const STANDARD_WORK_HOURS = 8;
+const EMPLOYEES_PER_PAGE = 25;
 
 export default function SalarySystem() {
   const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('attendance');
@@ -81,6 +82,10 @@ export default function SalarySystem() {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([]);
+  const [employeePage, setEmployeePage] = useState(1);
+  const [attendancePage, setAttendancePage] = useState(1);
+  const [payrollPage, setPayrollPage] = useState(1);
+  const [printingSelectedEmployees, setPrintingSelectedEmployees] = useState(false);
 
   // Initialize with completely empty records so unuploaded months show no fake data
   const [monthlyRecords, setMonthlyRecords] = useState<{ [monthKey: string]: MonthlyData }>({});
@@ -125,6 +130,25 @@ export default function SalarySystem() {
       isActive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!printingSelectedEmployees) return;
+
+    const root = document.documentElement;
+    const clearSelectedPrint = () => {
+      delete root.dataset.printSelectedOnly;
+      setPrintingSelectedEmployees(false);
+    };
+
+    root.dataset.printSelectedOnly = 'true';
+    window.addEventListener('afterprint', clearSelectedPrint, { once: true });
+    window.print();
+
+    return () => {
+      window.removeEventListener('afterprint', clearSelectedPrint);
+      delete root.dataset.printSelectedOnly;
+    };
+  }, [printingSelectedEmployees]);
 
   useEffect(() => {
     let isActive = true;
@@ -716,6 +740,8 @@ export default function SalarySystem() {
     return employees.filter(e => e.machineId.toLowerCase().includes(term) || e.name.toLowerCase().includes(term));
   };
 
+  const printSelectedEmployees = () => setPrintingSelectedEmployees(true);
+
   const calculateEmployeePayroll = (emp: Employee) => {
     const monthData = monthlyRecords[selectedMonth] || { attendance: {}, paidStatus: {} };
     const empAtt = monthData.attendance?.[emp.machineId] || {};
@@ -804,6 +830,15 @@ export default function SalarySystem() {
     deduction: totals.deduction + item.deduction,
     netSalary: totals.netSalary + item.netSalary
   }), { basicSalary: 0, deduction: 0, netSalary: 0 });
+  const attendanceEmployees = getFilteredEmployees().filter(employee => employee.status === 'Active');
+  const attendancePageCount = Math.max(1, Math.ceil(attendanceEmployees.length / EMPLOYEES_PER_PAGE));
+  const currentAttendancePage = Math.min(attendancePage, attendancePageCount);
+  const attendancePageStart = (currentAttendancePage - 1) * EMPLOYEES_PER_PAGE;
+  const paginatedAttendanceEmployees = attendanceEmployees.slice(attendancePageStart, attendancePageStart + EMPLOYEES_PER_PAGE);
+  const payrollPageCount = Math.max(1, Math.ceil(visiblePayrollSummary.length / EMPLOYEES_PER_PAGE));
+  const currentPayrollPage = Math.min(payrollPage, payrollPageCount);
+  const payrollPageStart = (currentPayrollPage - 1) * EMPLOYEES_PER_PAGE;
+  const paginatedPayrollSummary = visiblePayrollSummary.slice(payrollPageStart, payrollPageStart + EMPLOYEES_PER_PAGE);
 
   const exportPDF = () => {
     const doc = new jsPDF();
@@ -832,6 +867,14 @@ export default function SalarySystem() {
 
     doc.save(`Payroll_${selectedMonth}.pdf`);
   };
+
+  const filteredEmployees = getFilteredEmployees();
+  const employeePageCount = Math.max(1, Math.ceil(filteredEmployees.length / EMPLOYEES_PER_PAGE));
+  const currentEmployeePage = Math.min(employeePage, employeePageCount);
+  const employeePageStart = (currentEmployeePage - 1) * EMPLOYEES_PER_PAGE;
+  const directoryEmployees = printingSelectedEmployees
+    ? employees.filter(emp => selectedEmployeeIds.includes(emp.id))
+    : filteredEmployees.slice(employeePageStart, employeePageStart + EMPLOYEES_PER_PAGE);
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans antialiased">
@@ -867,12 +910,22 @@ export default function SalarySystem() {
           <input 
             type="text" 
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setEmployeePage(1);
+              setAttendancePage(1);
+              setPayrollPage(1);
+            }}
             placeholder="Search employee by name or machine code..."
             className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="text-xs text-slate-400 hover:text-white px-2 py-1">Clear</button>
+            <button onClick={() => {
+              setSearchTerm('');
+              setEmployeePage(1);
+              setAttendancePage(1);
+              setPayrollPage(1);
+            }} className="text-xs text-slate-400 hover:text-white px-2 py-1">Clear</button>
           )}
         </div>
 
@@ -973,25 +1026,33 @@ export default function SalarySystem() {
                   </div>
                 </form>
 
-                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto">
+                <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 shadow-xl overflow-x-auto printable-employee-list">
                   <div className="flex justify-between items-center mb-3">
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider">Employee Directory</h3>
-                    {selectedEmployeeIds.length > 0 && (
-                      <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md">
-                        <span>Delete Selected ({selectedEmployeeIds.length})</span>
-                      </button>
-                    )}
+                    <div className="no-print flex items-center gap-2">
+                      {selectedEmployeeIds.length > 0 && (
+                        <>
+                          <button type="button" onClick={printSelectedEmployees} disabled={loading || !employees.some(emp => selectedEmployeeIds.includes(emp.id))} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
+                            <Printer size={14} />
+                            <span>Print Selected ({selectedEmployeeIds.length})</span>
+                          </button>
+                          <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md">
+                            <span>Delete Selected ({selectedEmployeeIds.length})</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {loading ? (
                     <div className="text-center py-6 text-slate-400 text-xs">Loading employees...</div>
-                  ) : getFilteredEmployees().length === 0 ? (
+                  ) : filteredEmployees.length === 0 ? (
                     <div className="text-center py-6 text-slate-400 text-xs">No employees found.</div>
                   ) : (
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-700">
                         <tr>
-                          <th className="p-2.5 w-10">
+                          <th className="no-print p-2.5 w-10">
                             <input 
                               type="checkbox" 
                               onChange={handleSelectAll}
@@ -1007,13 +1068,13 @@ export default function SalarySystem() {
                           <th className="p-2.5">Type</th>
                           <th className="p-2.5">Salary</th>
                           <th className="p-2.5">Status</th>
-                          <th className="p-2.5 text-right">Actions</th>
+                          <th className="no-print p-2.5 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-700/50">
-                        {getFilteredEmployees().map((emp) => (
-                          <tr key={emp.id} className="hover:bg-slate-700/30">
-                            <td className="p-2.5">
+                        {directoryEmployees.map((emp) => (
+                          <tr key={emp.id} data-selected-for-print={selectedEmployeeIds.includes(emp.id) ? 'true' : 'false'} className="hover:bg-slate-700/30">
+                            <td className="no-print p-2.5">
                               <input 
                                 type="checkbox" 
                                 checked={selectedEmployeeIds.includes(emp.id)}
@@ -1033,7 +1094,7 @@ export default function SalarySystem() {
                                 {emp.status}
                               </span>
                             </td>
-                            <td className="p-2.5 text-right">
+                            <td className="no-print p-2.5 text-right">
                               <button onClick={() => editEmployee(emp)} className="text-slate-400 hover:text-indigo-400 p-1" title="Edit">
                                 <Pencil size={14} />
                               </button>
@@ -1042,6 +1103,24 @@ export default function SalarySystem() {
                         ))}
                       </tbody>
                     </table>
+                  )}
+                  {!loading && filteredEmployees.length > 0 && (
+                    <div className="no-print mt-4 flex flex-col gap-3 border-t border-slate-700/60 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs text-slate-400">
+                        Showing {employeePageStart + 1}-{Math.min(employeePageStart + EMPLOYEES_PER_PAGE, filteredEmployees.length)} of {filteredEmployees.length} employees
+                      </span>
+                      <div className="flex items-center justify-between gap-3 sm:justify-end">
+                        <button type="button" onClick={() => setEmployeePage(currentEmployeePage - 1)} disabled={currentEmployeePage === 1} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                          <ChevronLeft size={14} />
+                          <span>Previous</span>
+                        </button>
+                        <span className="whitespace-nowrap text-xs text-slate-400">Page {currentEmployeePage} of {employeePageCount}</span>
+                        <button type="button" onClick={() => setEmployeePage(currentEmployeePage + 1)} disabled={currentEmployeePage === employeePageCount} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                          <span>Next</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1120,7 +1199,7 @@ export default function SalarySystem() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
-                      {getFilteredEmployees().filter(e => e.status === 'Active').map((emp) => (
+                      {paginatedAttendanceEmployees.map((emp) => (
                         <tr key={emp.id} className="hover:bg-slate-700/30">
                           <td className="p-2.5 font-bold text-indigo-400">{emp.machineId}</td>
                           <td className="p-2.5 font-medium text-white">{emp.name}</td>
@@ -1160,6 +1239,24 @@ export default function SalarySystem() {
                       ))}
                     </tbody>
                   </table>
+                  {attendanceEmployees.length > 0 && (
+                    <div className="no-print mt-4 flex flex-col gap-3 border-t border-slate-700/60 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs text-slate-400">
+                        Showing {attendancePageStart + 1}-{Math.min(attendancePageStart + EMPLOYEES_PER_PAGE, attendanceEmployees.length)} of {attendanceEmployees.length} employees
+                      </span>
+                      <div className="flex items-center justify-between gap-3 sm:justify-end">
+                        <button type="button" onClick={() => setAttendancePage(currentAttendancePage - 1)} disabled={currentAttendancePage === 1} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                          <ChevronLeft size={14} />
+                          <span>Previous</span>
+                        </button>
+                        <span className="whitespace-nowrap text-xs text-slate-400">Page {currentAttendancePage} of {attendancePageCount}</span>
+                        <button type="button" onClick={() => setAttendancePage(currentAttendancePage + 1)} disabled={currentAttendancePage === attendancePageCount} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                          <span>Next</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1179,7 +1276,7 @@ export default function SalarySystem() {
                         type="button"
                         role="tab"
                         aria-selected={payrollPaymentFilter === 'all'}
-                        onClick={() => setPayrollPaymentFilter('all')}
+                        onClick={() => { setPayrollPaymentFilter('all'); setPayrollPage(1); }}
                         className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${payrollPaymentFilter === 'all' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-white'}`}
                       >
                         All ({payrollSummary.length})
@@ -1188,7 +1285,7 @@ export default function SalarySystem() {
                         type="button"
                         role="tab"
                         aria-selected={payrollPaymentFilter === 'unpaid'}
-                        onClick={() => setPayrollPaymentFilter('unpaid')}
+                        onClick={() => { setPayrollPaymentFilter('unpaid'); setPayrollPage(1); }}
                         className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${payrollPaymentFilter === 'unpaid' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:text-white'}`}
                       >
                         Unpaid ({payrollSummary.filter(item => !item.isPaid).length})
@@ -1197,7 +1294,7 @@ export default function SalarySystem() {
                         type="button"
                         role="tab"
                         aria-selected={payrollPaymentFilter === 'paid'}
-                        onClick={() => setPayrollPaymentFilter('paid')}
+                        onClick={() => { setPayrollPaymentFilter('paid'); setPayrollPage(1); }}
                         className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${payrollPaymentFilter === 'paid' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
                       >
                         Paid ({payrollSummary.filter(item => item.isPaid).length})
@@ -1225,7 +1322,7 @@ export default function SalarySystem() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700/50">
-                      {visiblePayrollSummary.map((item) => (
+                      {paginatedPayrollSummary.map((item) => (
                         <tr key={item.machineId} className="hover:bg-slate-700/30">
                           <td className="p-2.5">
                             <button type="button" onClick={() => openPayrollCalculationByMachineId(item.machineId)} title="View salary calculation" className="font-bold text-indigo-400 hover:text-indigo-300 hover:underline">
@@ -1270,6 +1367,24 @@ export default function SalarySystem() {
                       </tr>
                     </tfoot>
                   </table>
+                  {visiblePayrollSummary.length > 0 && (
+                    <div className="no-print mt-4 flex flex-col gap-3 border-t border-slate-700/60 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs text-slate-400">
+                        Showing {payrollPageStart + 1}-{Math.min(payrollPageStart + EMPLOYEES_PER_PAGE, visiblePayrollSummary.length)} of {visiblePayrollSummary.length} employees
+                      </span>
+                      <div className="flex items-center justify-between gap-3 sm:justify-end">
+                        <button type="button" onClick={() => setPayrollPage(currentPayrollPage - 1)} disabled={currentPayrollPage === 1} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                          <ChevronLeft size={14} />
+                          <span>Previous</span>
+                        </button>
+                        <span className="whitespace-nowrap text-xs text-slate-400">Page {currentPayrollPage} of {payrollPageCount}</span>
+                        <button type="button" onClick={() => setPayrollPage(currentPayrollPage + 1)} disabled={currentPayrollPage === payrollPageCount} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
+                          <span>Next</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
