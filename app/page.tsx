@@ -67,47 +67,8 @@ const ATTENDANCE_STORAGE_KEY = 'salary-system-monthly-records';
 const STANDARD_WORK_HOURS = 8;
 const EMPLOYEES_PER_PAGE = 25;
 
-function BiometricSyncButton() {
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const handleSync = async () => {
-    setLoading(true);
-    setMessage('بائیومیٹرک مشین سے ڈیٹا سنک ہو رہا ہے...');
-
-    try {
-      const response = await fetch('/api/sync', { method: 'POST' });
-      const data = await response.json() as { success?: boolean; message?: string; error?: string };
-
-      if (response.ok && data.success) {
-        setMessage(data.message || 'ڈیٹا کامیابی سے سنک ہو گیا۔');
-      } else {
-        setMessage(`ایرر: ${data.error || 'ڈیٹا سنک نہیں ہو سکا۔'}`);
-      }
-    } catch {
-      setMessage('سرور سے رابطہ کرنے میں خرابی پیش آئی۔');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="my-4 flex flex-col items-start gap-3 rounded-lg border border-slate-700 bg-slate-800/60 p-4 shadow">
-      <h3 className="font-bold text-white">بائیومیٹرک اٹینڈنس سنک</h3>
-      <button
-        type="button"
-        onClick={handleSync}
-        disabled={loading}
-        className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-600"
-      >
-        {loading ? 'سنکنگ جاری ہے...' : '🔄 Sync Now (مشین سے ڈیٹا لیں)'}
-      </button>
-      {message && <p role="status" className="text-sm font-medium text-slate-300">{message}</p>}
-    </div>
-  );
-}
-
 export default function SalarySystem() {
+  const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'employees' | 'attendance' | 'payroll'>('attendance');
   const [payrollPaymentFilter, setPayrollPaymentFilter] = useState<'all' | 'unpaid' | 'paid'>('unpaid');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -150,6 +111,10 @@ export default function SalarySystem() {
     salary: '',
     status: 'Active' as Employee['status']
   });
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -916,6 +881,10 @@ export default function SalarySystem() {
     ? employees.filter(emp => selectedEmployeeIds.includes(emp.id))
     : filteredEmployees.slice(employeePageStart, employeePageStart + EMPLOYEES_PER_PAGE);
 
+  if (!mounted) {
+    return null; // Prevents hydration mismatch by rendering nothing on server side until mounted
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans antialiased">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -1197,8 +1166,6 @@ export default function SalarySystem() {
                     </label>
                   </div>
                 </div>
-
-                <BiometricSyncButton />
 
                 {/* Uploaded Punch Logs Live Preview Section */}
                 {allLogsPreview.length > 0 && (
